@@ -75,7 +75,7 @@ NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" 
 有两点需要注意：
 
 - **上游测试没有在跑**：上游原有的 JUnit 4 测试因为项目缺少 vintage 引擎，实际上一个都没有执行。本仓库新增的 server 测试用的是 JUnit 5。
-- **agent 构建请在正式环境复验一次**：开发环境访问不了 `dl.google.com`，所以 agent 的编译和测试用的是 Maven Central 上的 ddmlib 25.3.0 替身。`AndroidDeviceBridgeTool` 里有 3 处只存在于 31.x 的 API，只在本地副本里做了替换，仓库代码没有改动。正式发布前，请在能访问 `dl.google.com` 的环境里完整跑一次 `mvn test`。
+- **agent 的依赖从哪里下载**：pom 里配的是阿里云镜像，而 ddmlib 31.0.1 只发布在 Google Maven（`dl.google.com`）。CI（`.github/workflows/ci.yml`）改为直接从 Google Maven 和 Maven Central 下载，用真实的 ddmlib 编译并运行 agent 的全部测试；每个 PR 都会跑 server、agent、client-web 三项检查。本地下载失败时，可以照搬 CI 里的 `settings.xml` 镜像配置。
 
 ## 开放给外部机主之前必须解决的问题（第 1 阶段）
 
