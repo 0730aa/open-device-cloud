@@ -3,6 +3,7 @@ package org.cloud.sonic.relay;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -32,6 +33,8 @@ class RelayIntegrationTest {
 
     @LocalServerPort
     private int port;
+    @Autowired
+    private AgentRegistry agents;
 
     @DynamicPropertySource
     static void platformKey(DynamicPropertyRegistry registry) {
@@ -67,18 +70,35 @@ class RelayIntegrationTest {
         assertArrayEquals(frame, browser.nextBinary());
     }
 
+    /**
+     * Repeated because the close once raced the end of the connection, which could close the
+     * other side with no status (1005) instead.
+     */
     @Test
     void closingEitherSideClosesTheOtherWithTheSameCode() throws Exception {
-        TestSocket control = agent(3);
-        TestSocket browser = browser("/websockets/android/" + ticket(3, "serial-3") + "/serial-3");
-        TestSocket agentSide = dataConnection(nextOpen(control));
-        agentSide.close(1008);
-        assertEquals(1008, browser.closeCode());
+        for (int round = 0; round < 25; round++) {
+            int agentId = 100 + round;
+            TestSocket control = agent(agentId);
+            TestSocket browser = browser("/websockets/android/" + ticket(agentId, "serial") + "/serial");
+            TestSocket agentSide = dataConnection(nextOpen(control));
+            browser.send("up");
+            assertEquals("up", agentSide.nextText());
+            for (int i = 0; i < 8; i++) {
+                agentSide.send(new byte[64 * 1024]);
+            }
+            agentSide.close(1008);
+            assertEquals(1008, browser.closeCode(), "the agent's close, round " + round);
 
-        TestSocket secondBrowser = browser("/websockets/android/terminal/" + ticket(3, "serial-3") + "/serial-3");
-        TestSocket secondAgentSide = dataConnection(nextOpen(control));
-        secondBrowser.close(1000);
-        assertEquals(1000, secondAgentSide.closeCode());
+            TestSocket secondBrowser = browser("/websockets/android/terminal/" + ticket(agentId, "serial") + "/serial");
+            TestSocket secondAgentSide = dataConnection(nextOpen(control));
+            secondAgentSide.send("up");
+            assertEquals("up", secondBrowser.nextText());
+            for (int i = 0; i < 8; i++) {
+                secondBrowser.send(new byte[64 * 1024]);
+            }
+            secondBrowser.close(1000);
+            assertEquals(1000, secondAgentSide.closeCode(), "the browser's close, round " + round);
+        }
     }
 
     @Test
@@ -194,8 +214,18 @@ class RelayIntegrationTest {
         assertEquals("hello", agentSide.nextText());
     }
 
-    private TestSocket agent(int agentId) {
-        return TestSocket.connect(url("/agent/control?token=" + TestTokens.relayToken(PLATFORM, agentId, Duration.ofMinutes(10))));
+    /**
+     * Connects as the agent and waits until the relay has registered it, which happens after the
+     * handshake completes: a browser connecting in between would be told the agent is not there.
+     */
+    private TestSocket agent(int agentId) throws InterruptedException {
+        AgentLink previous = agents.find(agentId);
+        TestSocket control = TestSocket.connect(url("/agent/control?token=" + TestTokens.relayToken(PLATFORM, agentId, Duration.ofMinutes(10))));
+        long deadline = System.currentTimeMillis() + 10_000;
+        while ((agents.find(agentId) == null || agents.find(agentId) == previous) && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+        return control;
     }
 
     private TestSocket browser(String path) {

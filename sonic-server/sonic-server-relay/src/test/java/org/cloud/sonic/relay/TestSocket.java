@@ -22,7 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 final class TestSocket implements WebSocket.Listener {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
-    private static final long WAIT_SECONDS = 5;
+    /**
+     * Generous, for busy CI machines; passing tests do not wait this long.
+     */
+    private static final long WAIT_SECONDS = 10;
 
     private final BlockingQueue<Object> received = new LinkedBlockingQueue<>();
     private final CompletableFuture<Integer> closeCode = new CompletableFuture<>();

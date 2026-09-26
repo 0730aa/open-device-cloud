@@ -22,6 +22,7 @@ import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -34,9 +35,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class Bridge {
     /**
-     * How long to wait for the status of a connection that just ended.
+     * How long to wait, once messages stop, for the close to reach the other side.
      */
-    private static final Duration CLOSE_STATUS_WAIT = Duration.ofSeconds(2);
+    private static final Duration CLOSE_WAIT = Duration.ofSeconds(2);
 
     private Bridge() {
     }
@@ -47,11 +48,13 @@ final class Bridge {
      *                     remote-control connection can be quiet for longer (e.g. a still screen).
      */
     static Mono<Void> between(WebSocketSession browser, WebSocketSession agent, Traffic traffic, Duration pingInterval) {
+        Sinks.Empty<Void> closePassedOn = Sinks.empty();
+        passOnClose(browser, agent, closePassedOn);
+        passOnClose(agent, browser, closePassedOn);
         Mono<Void> fromBrowser = agent.send(browser.receive()
                         .filter(Bridge::isData)
                         .map(message -> copy(message, agent, traffic.fromBrowser)))
-                .onErrorResume(e -> Mono.empty())
-                .then(Mono.defer(() -> closeWithStatusOf(browser, agent)));
+                .onErrorResume(e -> Mono.empty());
         Flux<WebSocketMessage> pings = Flux.interval(pingInterval)
                 .onBackpressureDrop()
                 .map(tick -> browser.pingMessage(factory -> factory.wrap(new byte[0])));
@@ -61,9 +64,24 @@ final class Bridge {
                 // Pings stop when the agent's messages do.
                 .publish(messages -> Flux.merge(messages, pings.takeUntilOther(messages.ignoreElements())));
         Mono<Void> fromAgent = browser.send(toBrowser)
+                .onErrorResume(e -> Mono.empty());
+        return Mono.firstWithSignal(fromBrowser, fromAgent)
+                .then(closePassedOn.asMono().timeout(CLOSE_WAIT, Mono.empty()));
+    }
+
+    /**
+     * Closes {@code to} with the status {@code from} closed with, as soon as that is known. A
+     * connection's status is known before its messages end, and its end cancels reading from the
+     * other side, which makes Reactor Netty close that one with no status (1005) unless it was
+     * closed already. A connection that drops without a close frame counts as going away.
+     */
+    private static void passOnClose(WebSocketSession from, WebSocketSession to, Sinks.Empty<Void> passedOn) {
+        from.closeStatus()
                 .onErrorResume(e -> Mono.empty())
-                .then(Mono.defer(() -> closeWithStatusOf(agent, browser)));
-        return Mono.firstWithSignal(fromBrowser, fromAgent);
+                .defaultIfEmpty(CloseStatus.GOING_AWAY)
+                .flatMap(status -> to.close(sendable(status)))
+                .onErrorResume(e -> Mono.empty())
+                .subscribe(null, null, passedOn::tryEmitEmpty);
     }
 
     /**
@@ -82,15 +100,6 @@ final class Bridge {
         payload.read(bytes);
         counter.addAndGet(bytes.length);
         return new WebSocketMessage(message.getType(), target.bufferFactory().wrap(bytes));
-    }
-
-    private static Mono<Void> closeWithStatusOf(WebSocketSession ended, WebSocketSession other) {
-        return ended.closeStatus()
-                .timeout(CLOSE_STATUS_WAIT, Mono.empty())
-                .onErrorResume(e -> Mono.empty())
-                .defaultIfEmpty(CloseStatus.GOING_AWAY)
-                .flatMap(status -> other.close(sendable(status)))
-                .onErrorResume(e -> Mono.empty());
     }
 
     /**
