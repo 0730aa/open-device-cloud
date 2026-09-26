@@ -63,6 +63,7 @@ public class TransportClient extends WebSocketClient {
     String host = String.valueOf(SpringTool.getPropertiesValue("sonic.agent.host"));
     String version = String.valueOf(SpringTool.getPropertiesValue("spring.version"));
     Integer port = Integer.valueOf(SpringTool.getPropertiesValue("sonic.agent.port"));
+    String publicUrl = SpringTool.getPropertiesValue("sonic.agent.public-url:");
 
     public TransportClient(URI serverUri) {
         super(serverUri);
@@ -280,6 +281,7 @@ public class TransportClient extends WebSocketClient {
                         agentInfo.put("host", host);
                         agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
                         agentInfo.put("remoteAccess", RemoteAccessPolicy.isEnabled() ? 1 : 0);
+                        agentInfo.put("publicUrl", publicUrl);
                         TransportWorker.client.send(agentInfo.toJSONString());
                         IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
                         for (IDevice d : iDevices) {

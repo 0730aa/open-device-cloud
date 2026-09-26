@@ -122,6 +122,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
                 }
                 // Agents that predate the flag never report it and so never allow remote ports.
                 oldAgent.setRemoteAccess(Integer.valueOf(1).equals(jsonObject.getInteger("remoteAccess")) ? 1 : 0);
+                oldAgent.setPublicUrl(normalizePublicUrl(jsonObject.getString("publicUrl")));
                 save(oldAgent);
             }
         }
@@ -154,6 +155,17 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
         } else {
             return false;
         }
+    }
+
+    /**
+     * Browsers open WebSockets to this URL, so only accept scheme://host[:port][/path] made of URL-safe
+     * characters; anything else is dropped.
+     */
+    static String normalizePublicUrl(String publicUrl) {
+        if (publicUrl == null || !publicUrl.matches("(?i)(https?|wss?)://[a-z0-9.-]+(:\\d{1,5})?(/[a-z0-9._~%/-]*)?")) {
+            return "";
+        }
+        return publicUrl.replaceAll("/+$", "");
     }
 
     @Override

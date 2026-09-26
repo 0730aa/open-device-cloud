@@ -241,6 +241,17 @@ defineProps({
 });
 
 /**
+ * Where the browser reaches the agent: its public URL when it has one (behind a TLS proxy or a
+ * tunnel), otherwise host:port, over wss whenever this page itself is served over https.
+ */
+const agentWsBase = () => {
+  if (agent.value.publicUrl) {
+    return agent.value.publicUrl.replace(/^http/i, 'ws');
+  }
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${agent.value.host}:${agent.value.port}`;
+};
+/**
  * The agent only accepts short-lived remote tickets, so fetch a new one for every connection.
  */
 const withTicket = (callback) => {
@@ -258,7 +269,9 @@ const tabWebView = (port, id, transTitle) => {
   withTicket((ticket) => {
     title.value = transTitle;
     isWebView.value = false;
-    iframeUrl.value = `/chrome/devtools/inspector.html?ws=${agent.value.host}:${agent.value.port}/websockets/webView/${ticket}/${device.value.udId}/${port}/${id}`;
+    // DevTools takes the agent address as ?ws= or ?wss= without the scheme.
+    const [scheme, address] = agentWsBase().split('://');
+    iframeUrl.value = `/chrome/devtools/inspector.html?${scheme}=${address}/websockets/webView/${ticket}/${device.value.udId}/${port}/${id}`;
     nextTick(() => {
       iFrameHeight.value = document.body.clientHeight - 150;
     });
@@ -514,15 +527,15 @@ const setImgData = () => {
   };
   isShowImg.value = true;
 };
-const openSocket = (host, port, ticket, udId) => {
+const openSocket = (ticket, udId) => {
   if ('WebSocket' in window) {
     //
     websocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/${ticket}/${udId}`
+      `${agentWsBase()}/websockets/android/${ticket}/${udId}`
     );
     //
     __Scrcpy = new Scrcpy({
-      socketURL: `ws://${host}:${port}/websockets/android/screen/${ticket}/${udId}`,
+      socketURL: `${agentWsBase()}/websockets/android/screen/${ticket}/${udId}`,
       node: 'scrcpy-video',
       onmessage: screenWebsocketOnmessage,
       excuteMode: screenMode.value,
@@ -531,7 +544,7 @@ const openSocket = (host, port, ticket, udId) => {
     changeScreenMode(screenMode.value, 1);
     //
     terminalWebsocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/terminal/${ticket}/${udId}`
+      `${agentWsBase()}/websockets/android/terminal/${ticket}/${udId}`
     );
   } else {
     console.error($t('androidRemoteTS.noWebSocket'));
@@ -1680,12 +1693,7 @@ const getDeviceById = (id) => {
           if (resp.code === 2000) {
             agent.value = resp.data;
             withTicket((ticket) => {
-              openSocket(
-                agent.value.host,
-                agent.value.port,
-                ticket,
-                device.value.udId
-              );
+              openSocket(ticket, device.value.udId);
             });
           }
         });
@@ -1700,7 +1708,7 @@ const isConnectAudio = ref(false);
 const initAudioPlayer = (ticket) => {
   audioPlayer = new AudioProcessor({
     node: 'audio-player',
-    wsUrl: `ws://${agent.value.host}:${agent.value.port}/websockets/audio/${ticket}/${device.value.udId}`,
+    wsUrl: `${agentWsBase()}/websockets/audio/${ticket}/${device.value.udId}`,
     onReady() {
       isConnectAudio.value = true;
     },

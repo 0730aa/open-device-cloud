@@ -116,6 +116,10 @@ public class Agents implements Serializable, TypeConverter<Agents, AgentsDTO> {
     @Column(value = "owner_name", isNull = false, comment = "机主用户名，为空表示平台自营", defaultValue = "")
     private String ownerName;
 
+    @TableField
+    @Column(value = "public_url", isNull = false, comment = "浏览器访问Agent的地址（TLS代理或隧道），为空则用host:port", defaultValue = "")
+    private String publicUrl;
+
     @TableField(typeHandler = NullableIntArrayTypeHandler.class, updateStrategy = FieldStrategy.IGNORED)
     @Column(value = "alert_robot_ids", type = MySqlTypeConstant.VARCHAR, length = 1024, comment = "逗号分隔通知机器人id串，为null时自动选取所有可用机器人")
     private int[] alertRobotIds;
