@@ -124,6 +124,11 @@ public class TransportClient extends WebSocketClient {
 
                             int sasPort = jsonObject.getInteger("sasRemotePort");
                             int uiaPort = jsonObject.getInteger("uia2RemotePort");
+                            if (!RemoteAccessPolicy.isEnabled() && (sasPort != 0 || uiaPort != 0)) {
+                                log.info("Remote access is disabled on this agent, not opening remote ports for {}.", udId);
+                                sasPort = 0;
+                                uiaPort = 0;
+                            }
 
                             if (sasPort != 0) {
                                 AndroidSupplyTool.startShare(udId, sasPort);
@@ -132,6 +137,7 @@ public class TransportClient extends WebSocketClient {
                             if (uiaPort != 0) {
                                 try {
                                     AndroidDeviceBridgeTool.startUiaServer(iDevice, uiaPort);
+                                    OccupyMap.uiaPorts.put(udId, uiaPort);
                                 } catch (InstallException e) {
                                     log.error(e.getMessage());
                                 }
@@ -156,6 +162,12 @@ public class TransportClient extends WebSocketClient {
                             int sibPort = jsonObject.getInteger("sibRemotePort");
                             int wdaPort = jsonObject.getInteger("wdaServerRemotePort");
                             int wdaMjpegPort = jsonObject.getInteger("wdaMjpegRemotePort");
+                            if (!RemoteAccessPolicy.isEnabled() && (sibPort != 0 || wdaPort != 0 || wdaMjpegPort != 0)) {
+                                log.info("Remote access is disabled on this agent, not opening remote ports for {}.", udId);
+                                sibPort = 0;
+                                wdaPort = 0;
+                                wdaMjpegPort = 0;
+                            }
 
                             if (sibPort != 0) {
                                 SibTool.startShare(udId, sibPort);
@@ -267,6 +279,7 @@ public class TransportClient extends WebSocketClient {
                         agentInfo.put("systemType", System.getProperty("os.name"));
                         agentInfo.put("host", host);
                         agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
+                        agentInfo.put("remoteAccess", RemoteAccessPolicy.isEnabled() ? 1 : 0);
                         TransportWorker.client.send(agentInfo.toJSONString());
                         IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
                         for (IDevice d : iDevices) {
@@ -437,6 +450,7 @@ public class TransportClient extends WebSocketClient {
 
     private void androidRelease(String udId) {
         releaseOccupant(udId);
+        OccupyMap.uiaPorts.remove(udId);
         AndroidDeviceLocalStatus.finish(udId);
         Thread s = AndroidThreadMap.getMap().get(String.format("%s-uia-thread", udId));
         if (s != null) {

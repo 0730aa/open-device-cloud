@@ -131,7 +131,14 @@ public class AndroidWSServer implements IAndroidWSServer {
 
         AndroidTouchHandler.startTouch(iDevice);
 
-        AndroidSupplyTool.startShare(udId, session);
+        if (RemoteAccessPolicy.isEnabled()) {
+            AndroidSupplyTool.startShare(udId, session);
+        } else {
+            JSONObject sas = new JSONObject();
+            sas.put("msg", "sas");
+            sas.put("isEnable", false);
+            BytesTool.sendText(session, sas.toJSONString());
+        }
 
         openDriver(iDevice, session);
 

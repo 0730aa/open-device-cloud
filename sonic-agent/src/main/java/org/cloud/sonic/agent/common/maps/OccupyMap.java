@@ -13,4 +13,8 @@ public class OccupyMap {
      * Device serial -> user who occupied it, whose device claim is released with the occupation.
      */
     public static Map<String, String> users = new ConcurrentHashMap<>();
+    /**
+     * Device serial -> UIA2 port opened for its occupation, the only ports the /uia proxy reaches.
+     */
+    public static Map<String, Integer> uiaPorts = new ConcurrentHashMap<>();
 }

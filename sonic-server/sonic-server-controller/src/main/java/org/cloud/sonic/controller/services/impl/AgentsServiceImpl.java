@@ -69,6 +69,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
             agents.setRobotSecret(robotSecret);
             agents.setSecretKey(UUID.randomUUID().toString());
             agents.setHasHub(0);
+            agents.setRemoteAccess(0);
             agents.setAlertRobotIds(alertRobotIds);
             save(agents);
         } else {
@@ -115,6 +116,8 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
                 if (jsonObject.getInteger("hasHub") != null) {
                     oldAgent.setHasHub(jsonObject.getInteger("hasHub"));
                 }
+                // Agents that predate the flag never report it and so never allow remote ports.
+                oldAgent.setRemoteAccess(Integer.valueOf(1).equals(jsonObject.getInteger("remoteAccess")) ? 1 : 0);
                 save(oldAgent);
             }
         }

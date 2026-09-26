@@ -108,6 +108,10 @@ public class Agents implements Serializable, TypeConverter<Agents, AgentsDTO> {
     @Column(value = "has_hub", isNull = false, comment = "是否使用了Sonic hub", defaultValue = "0")
     private Integer hasHub;
 
+    @TableField
+    @Column(value = "remote_access", isNull = false, comment = "是否允许远程ADB/SIB/WDA/UIA2端口", defaultValue = "0")
+    private Integer remoteAccess;
+
     @TableField(typeHandler = NullableIntArrayTypeHandler.class, updateStrategy = FieldStrategy.IGNORED)
     @Column(value = "alert_robot_ids", type = MySqlTypeConstant.VARCHAR, length = 1024, comment = "逗号分隔通知机器人id串，为null时自动选取所有可用机器人")
     private int[] alertRobotIds;

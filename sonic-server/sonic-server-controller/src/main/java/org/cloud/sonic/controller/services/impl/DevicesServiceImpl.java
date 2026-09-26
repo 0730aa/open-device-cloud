@@ -87,6 +87,9 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             if (devices.getStatus().equals(DeviceStatus.ONLINE)) {
                 Agents agents = agentsService.findById(devices.getAgentId());
                 if (agents != null) {
+                    if (requestsRemotePorts(occupyParams) && !Integer.valueOf(1).equals(agents.getRemoteAccess())) {
+                        return new RespModel<>(RespEnum.REMOTE_ACCESS_DISABLED);
+                    }
                     JSONObject jsonObject = (JSONObject) JSONObject.toJSON(occupyParams);
                     jsonObject.put("msg", "occupy");
                     // Agents are run by third parties: give them a ticket for this device, never the user's login token.
@@ -125,6 +128,12 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         } else {
             return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
         }
+    }
+
+    private static boolean requestsRemotePorts(OccupyParams occupyParams) {
+        return occupyParams.getSasRemotePort() != 0 || occupyParams.getUia2RemotePort() != 0
+                || occupyParams.getSibRemotePort() != 0 || occupyParams.getWdaServerRemotePort() != 0
+                || occupyParams.getWdaMjpegRemotePort() != 0;
     }
 
     @Override

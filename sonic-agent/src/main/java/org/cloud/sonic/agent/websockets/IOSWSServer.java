@@ -162,7 +162,15 @@ public class IOSWSServer implements IIOSWSServer {
             }
         });
 
-        SibTool.startShare(udId, session);
+        if (RemoteAccessPolicy.isEnabled()) {
+            SibTool.startShare(udId, session);
+        } else {
+            JSONObject share = new JSONObject();
+            share.put("msg", "share");
+            share.put("isEnable", false);
+            share.put("port", 0);
+            sendText(session, share.toJSONString());
+        }
 
     }
 

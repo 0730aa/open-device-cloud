@@ -83,6 +83,9 @@ public class AgentsDTO implements Serializable, TypeConverter<AgentsDTO, Agents>
     @Schema(description = "是否使用sonic hub", example = "1")
     Integer hasHub;
 
+    @Schema(description = "是否允许远程ADB/SIB/WDA/UIA2端口", example = "0")
+    Integer remoteAccess;
+
     @Schema(description = "通知机器人id串，为null时自动选取所有可用机器人", example = "[1,2]")
     int[] alertRobotIds;
 }

@@ -705,7 +705,11 @@ const screenWebsocketOnmessage = (message) => {
 const websocketOnmessage = (message) => {
   switch (JSON.parse(message.data).msg) {
     case 'share':
-      remoteSIBPort.value = JSON.parse(message.data).port;
+      // -1: the agent does not allow remote SIB
+      remoteSIBPort.value =
+        JSON.parse(message.data).isEnable === false
+          ? -1
+          : JSON.parse(message.data).port;
       break;
     case 'perfDetail':
       iosPerfRef.value.setData(JSON.parse(message.data).detail);
@@ -1810,6 +1814,17 @@ const checkAlive = () => {
                   <el-tab-pane :label="$t('IOSRemote.remoteSIB')">
                     <div style="padding: 13px 0">
                       <div
+                        v-if="remoteSIBPort < 0"
+                        style="margin-top: 20px; margin-bottom: 20px"
+                      >
+                        <el-card>
+                          <strong>{{
+                            $t('androidRemoteTS.code.noAgent')
+                          }}</strong>
+                        </el-card>
+                      </div>
+                      <div
+                        v-else
                         v-loading="remoteSIBPort === 0"
                         element-loading-background="rgba(255, 255, 255, 1)"
                         style="margin-top: 20px; margin-bottom: 20px"
