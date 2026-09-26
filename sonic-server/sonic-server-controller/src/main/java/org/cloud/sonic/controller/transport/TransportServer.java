@@ -38,12 +38,16 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Component
 @Slf4j
 @ServerEndpoint(value = "/agent/{agentKey}", configurator = WsEndpointConfigure.class)
 public class TransportServer {
+    /**
+     * Session property holding the id of the agent that authenticated this session.
+     */
+    static final String AGENT_ID = "agentId";
+
     @Autowired
     private AgentsService agentsService;
     @Autowired
@@ -76,6 +80,7 @@ public class TransportServer {
             session.close();
         } else {
             log.info("Session: {} auth successful!", session.getId());
+            session.getUserProperties().put(AGENT_ID, authResult.getId());
             JSONObject auth = new JSONObject();
             auth.put("msg", "auth");
             auth.put("result", "pass");
@@ -89,14 +94,19 @@ public class TransportServer {
 
     @OnMessage
     public void onMessage(String message, Session session) {
+        Integer agentId = (Integer) session.getUserProperties().get(AGENT_ID);
+        if (agentId == null) {
+            log.info("Session: {} is not authenticated, message ignored.", session.getId());
+            return;
+        }
         JSONObject jsonMsg = JSON.parseObject(message);
+        // An agent is whoever its key says it is. Every handler below reads agentId from the
+        // message, so overwrite it to stop one agent from acting as (or hijacking) another.
+        jsonMsg.put("agentId", agentId);
         if (jsonMsg.getString("msg").equals("ping")) {
-            Session agentSession = BytesTool.agentSessionMap.get(jsonMsg.getInteger("agentId"));
-            if (agentSession != null) {
-                JSONObject pong = new JSONObject();
-                pong.put("msg", "pong");
-                BytesTool.sendText(agentSession, pong.toJSONString());
-            }
+            JSONObject pong = new JSONObject();
+            pong.put("msg", "pong");
+            BytesTool.sendText(session, pong.toJSONString());
             return;
         }
         log.info("Session :{} send message: {}", session.getId(), jsonMsg);
@@ -116,16 +126,14 @@ public class TransportServer {
                 }
                 break;
             case "agentInfo": {
-                Session agentSession = BytesTool.agentSessionMap.get(jsonMsg.getInteger("agentId"));
-                if (agentSession != null) {
+                Session oldSession = BytesTool.agentSessionMap.put(agentId, session);
+                if (oldSession != null && oldSession != session) {
                     try {
-                        agentSession.close();
+                        oldSession.close();
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    BytesTool.agentSessionMap.remove(jsonMsg.getInteger("agentId"));
                 }
-                BytesTool.agentSessionMap.put(jsonMsg.getInteger("agentId"), session);
                 jsonMsg.remove("msg");
                 agentsService.saveAgents(jsonMsg);
             }
@@ -218,13 +226,12 @@ public class TransportServer {
     @OnClose
     public void onClose(Session session) {
         log.info("Agent: {} disconnected.", session.getId());
-        for (Map.Entry<Integer, Session> entry : BytesTool.agentSessionMap.entrySet()) {
-            if (entry.getValue().equals(session)) {
-                int agentId = entry.getKey();
-                agentsService.offLine(agentId);
-            }
+        Integer agentId = (Integer) session.getUserProperties().get(AGENT_ID);
+        // Only the agent's current session may take it offline: when an agent reconnects,
+        // agentInfo has already swapped in the new session before the old one closes.
+        if (agentId != null && BytesTool.agentSessionMap.remove(agentId, session)) {
+            agentsService.offLine(agentId);
         }
-        BytesTool.agentSessionMap.remove(session);
     }
 
     @OnError
