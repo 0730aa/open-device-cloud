@@ -61,7 +61,7 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/android/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/android/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class AndroidWSServer implements IAndroidWSServer {
     @Value("${sonic.agent.key}")
     private String key;
@@ -71,26 +71,28 @@ public class AndroidWSServer implements IAndroidWSServer {
     private AgentManagerTool agentManagerTool;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
+            return;
+        }
+
+        // Checked before taking the lock so a rejected session leaves nothing behind.
+        IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
+        if (iDevice == null) {
+            log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
             return;
         }
 
         boolean lockSuccess = DevicesLockMap.lockByUdId(udId, 30L, TimeUnit.SECONDS);
         if (!lockSuccess) {
             log.info("Fail to get device lock... please make sure device is not busy.");
+            RemoteSessionGuard.reject(session, "device busy");
             return;
         }
         log.info("android lock udId：{}", udId);
         AndroidDeviceLocalStatus.startDebug(udId);
-
-        IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
-        if (iDevice == null) {
-            log.info("Target device is not connecting, please check the connection.");
-            return;
-        }
 
         session.getUserProperties().put("udId", udId);
         session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
@@ -100,7 +102,7 @@ public class AndroidWSServer implements IAndroidWSServer {
         // 更新使用用户
         JSONObject jsonDebug = new JSONObject();
         jsonDebug.put("msg", "debugUser");
-        jsonDebug.put("token", token);
+        jsonDebug.put("ticket", ticket);
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
 
@@ -129,7 +131,14 @@ public class AndroidWSServer implements IAndroidWSServer {
 
         AndroidTouchHandler.startTouch(iDevice);
 
-        AndroidSupplyTool.startShare(udId, session);
+        if (RemoteAccessPolicy.isEnabled()) {
+            AndroidSupplyTool.startShare(udId, session);
+        } else {
+            JSONObject sas = new JSONObject();
+            sas.put("msg", "sas");
+            sas.put("isEnable", false);
+            BytesTool.sendText(session, sas.toJSONString());
+        }
 
         openDriver(iDevice, session);
 
@@ -142,6 +151,9 @@ public class AndroidWSServer implements IAndroidWSServer {
 
     @OnClose
     public void onClose(Session session) {
+        if (!RemoteSessionGuard.release(session)) {
+            return;
+        }
         String udId = (String) session.getUserProperties().get("udId");
         try {
             exit(session);
@@ -186,6 +198,14 @@ public class AndroidWSServer implements IAndroidWSServer {
             }
             case "clearProxy" -> AndroidDeviceBridgeTool.clearProxy(iDevice);
             case "proxy" -> {
+                // The capture proxy and its web UI listen on this machine without authentication.
+                if (!RemoteAccessPolicy.isEnabled()) {
+                    JSONObject proxy = new JSONObject();
+                    proxy.put("msg", "proxyResult");
+                    proxy.put("isEnable", false);
+                    BytesTool.sendText(session, proxy.toJSONString());
+                    break;
+                }
                 AndroidDeviceBridgeTool.clearProxy(iDevice);
                 Socket portSocket = PortTool.getBindSocket();
                 Socket webPortSocket = PortTool.getBindSocket();

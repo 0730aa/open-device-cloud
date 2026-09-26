@@ -4,8 +4,11 @@ import com.alibaba.fastjson.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.*;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.cloud.sonic.common.tools.JWTTokenTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
@@ -20,7 +23,10 @@ import java.util.Arrays;
 @Aspect
 @Component
 public class WebAspectConfig {
+    private static final String REDACTED = "[redacted]";
     private final Logger logger = LoggerFactory.getLogger(WebAspectConfig.class);
+    @Autowired
+    private JWTTokenTool jwtTokenTool;
 
     /**
      * @return void
@@ -47,9 +53,11 @@ public class WebAspectConfig {
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("url", request.getRequestURL().toString());
         jsonObject.put("method", request.getMethod());
-        jsonObject.put("auth", request.getHeader("SonicToken"));
+        // Log who made the request, never the bearer token itself.
+        String token = request.getHeader("SonicToken");
+        jsonObject.put("user", token == null ? null : jwtTokenTool.getUserName(token));
         jsonObject.put("class", joinPoint.getSignature().getDeclaringTypeName() + "." + joinPoint.getSignature().getName());
-        jsonObject.put("request", Arrays.toString(joinPoint.getArgs()));
+        jsonObject.put("request", isSensitive(joinPoint) ? REDACTED : Arrays.toString(joinPoint.getArgs()));
         logger.info(jsonObject.toJSONString());
     }
 
@@ -61,9 +69,9 @@ public class WebAspectConfig {
      * @date 2021/8/15 23:10
      */
     @AfterReturning(returning = "ret", pointcut = "webAspect()")
-    public void doAfterReturning(Object ret) throws Throwable {
+    public void doAfterReturning(JoinPoint joinPoint, Object ret) throws Throwable {
         JSONObject jsonObject = new JSONObject();
-        jsonObject.put("response", ret);
+        jsonObject.put("response", isSensitive(joinPoint) ? REDACTED : ret);
         logger.info(jsonObject.toJSONString());
     }
 
@@ -80,4 +88,8 @@ public class WebAspectConfig {
         logger.info("error : " + ex.getMessage());
     }
 
+    private static boolean isSensitive(JoinPoint joinPoint) {
+        WebAspect webAspect = ((MethodSignature) joinPoint.getSignature()).getMethod().getAnnotation(WebAspect.class);
+        return webAspect != null && webAspect.sensitive();
+    }
 }

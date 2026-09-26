@@ -33,6 +33,7 @@ import org.cloud.sonic.agent.tests.LogUtil;
 import org.cloud.sonic.agent.tests.RunStepThread;
 import org.cloud.sonic.agent.tests.script.GroovyScriptImpl;
 import org.cloud.sonic.agent.tests.script.PythonScriptImpl;
+import org.cloud.sonic.agent.tests.script.ScriptPolicy;
 import org.cloud.sonic.agent.tests.script.ScriptRunner;
 import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.SpringTool;
@@ -1616,6 +1617,7 @@ public class IOSStepHandler {
         handleContext.setStepDes("Run Custom Scripts");
         handleContext.setDetail("Script: <br>" + script);
         try {
+            ScriptPolicy.checkEnabled();
             switch (type) {
                 case "Groovy" -> {
                     ScriptRunner groovyScript = new GroovyScriptImpl();

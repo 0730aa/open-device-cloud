@@ -27,6 +27,8 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <current.version>SONIC_VERSION</current.version>
+        <!-- Spring Boot 3.0.x manages Lombok 1.18.26, which cannot compile on JDK 21. -->
+        <lombok.version>1.18.36</lombok.version>
     </properties>
 
     <dependencyManagement>

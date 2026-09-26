@@ -20,13 +20,14 @@ package org.cloud.sonic.agent.websockets;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
+import org.cloud.sonic.agent.bridge.ios.SibTool;
 import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
+import org.cloud.sonic.agent.common.maps.AndroidWebViewMap;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -39,17 +40,21 @@ import java.util.Map;
  * @date 2021/10/25 23:03
  */
 @Component
-@ServerEndpoint(value = "/websockets/webView/{key}/{port}/{id}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/webView/{ticket}/{udId}/{port}/{id}", configurator = WsEndpointConfigure.class)
 public class WebViewWSServer {
     private final Logger logger = LoggerFactory.getLogger(WebViewWSServer.class);
-    @Value("${sonic.agent.key}")
-    private String key;
     private Map<Session, WebSocketClient> sessionWebSocketClientMap = new HashMap<>();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("port") int port, @PathParam("id") String id) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key))) {
-            logger.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket, @PathParam("udId") String udId,
+                       @PathParam("port") int port, @PathParam("id") String id) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
+            return;
+        }
+        // The port picks a local socket on this machine, so only allow the device's own webviews.
+        if (!isWebViewPortOf(udId, port)) {
+            logger.info("Rejected webview connection: port {} is not a webview of {}.", port, udId);
+            RemoteSessionGuard.reject(session, "unknown webview");
             return;
         }
         URI uri = new URI("ws://localhost:" + port + "/devtools/page/" + id);
@@ -91,8 +96,24 @@ public class WebViewWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        sessionWebSocketClientMap.get(session).close();
-        sessionWebSocketClientMap.remove(session);
+        if (!RemoteSessionGuard.release(session)) {
+            return;
+        }
+        WebSocketClient webSocketClient = sessionWebSocketClientMap.remove(session);
+        if (webSocketClient != null) {
+            webSocketClient.close();
+        }
+    }
+
+    static boolean isWebViewPortOf(String udId, int port) {
+        Integer inspectorPort = SibTool.getWebViewPort(udId);
+        if (inspectorPort != null && inspectorPort == port) {
+            return true;
+        }
+        return AndroidWebViewMap.getMap().entrySet().stream()
+                .filter(e -> udId.equals(e.getKey().getSerialNumber()))
+                .flatMap(e -> e.getValue().stream())
+                .anyMatch(forward -> Integer.valueOf(port).equals(forward.getInteger("port")));
     }
 
     @OnError

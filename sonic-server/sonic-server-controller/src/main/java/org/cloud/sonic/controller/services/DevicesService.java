@@ -40,6 +40,12 @@ public interface DevicesService extends IService<Devices> {
 
     RespModel release(String udId, String token);
 
+    /**
+     * Issue a short-lived ticket that lets the user open remote-control connections to the
+     * device on its agent, if the device is free or already being used by that user.
+     */
+    RespModel<JSONObject> remoteTicket(int id, String userName);
+
     boolean saveDetail(DeviceDetailChange deviceDetailChange);
 
     void updatePosition(int id, int position);

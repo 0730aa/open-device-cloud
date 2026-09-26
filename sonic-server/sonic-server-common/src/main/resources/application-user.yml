@@ -1,6 +1,7 @@
 sonic:
   token:
-    secret: ${SECRET_KEY:sonic}
+    # Required, at least 32 random characters, shared by every server component.
+    secret: ${SECRET_KEY:}
     expireDay: ${EXPIRE_DAY:14}
   user:
     register:

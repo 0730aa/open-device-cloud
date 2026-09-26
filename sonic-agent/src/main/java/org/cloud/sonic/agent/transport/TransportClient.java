@@ -63,6 +63,7 @@ public class TransportClient extends WebSocketClient {
     String host = String.valueOf(SpringTool.getPropertiesValue("sonic.agent.host"));
     String version = String.valueOf(SpringTool.getPropertiesValue("spring.version"));
     Integer port = Integer.valueOf(SpringTool.getPropertiesValue("sonic.agent.port"));
+    String publicUrl = SpringTool.getPropertiesValue("sonic.agent.public-url:");
 
     public TransportClient(URI serverUri) {
         super(serverUri);
@@ -84,8 +85,18 @@ public class TransportClient extends WebSocketClient {
             switch (jsonObject.getString("msg")) {
                 case "occupy" -> {
                     String udId = jsonObject.getString("udId");
-                    String token = jsonObject.getString("token");
+                    String ticket = jsonObject.getString("ticket");
                     int platform = jsonObject.getInteger("platform");
+
+                    String user = RemoteTicketVerifier.verify(ticket, udId);
+                    if (user == null) {
+                        log.info("Refuse to occupy {}: invalid or expired ticket.", udId);
+                        return;
+                    }
+                    if (!DeviceClaimMap.acquire(udId, user)) {
+                        log.info("Refuse to occupy {} for {}: the device is in use by someone else.", udId, user);
+                        return;
+                    }
 
                     boolean lockSuccess = false;
                     try {
@@ -94,9 +105,11 @@ public class TransportClient extends WebSocketClient {
                         log.info("Fail to get device lock, cause {}", e.getMessage());
                     }
                     if (!lockSuccess) {
+                        DeviceClaimMap.release(udId, user);
                         log.info("Fail to get device lock... please make sure device is not busy.");
                         return;
                     }
+                    OccupyMap.users.put(udId, user);
 
                     switch (platform) {
                         case PlatformType.ANDROID -> {
@@ -106,11 +119,17 @@ public class TransportClient extends WebSocketClient {
                             IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
                             if (iDevice == null) {
                                 log.info("Target device is not connecting, please check the connection.");
+                                androidRelease(udId);
                                 return;
                             }
 
                             int sasPort = jsonObject.getInteger("sasRemotePort");
                             int uiaPort = jsonObject.getInteger("uia2RemotePort");
+                            if (!RemoteAccessPolicy.isEnabled() && (sasPort != 0 || uiaPort != 0)) {
+                                log.info("Remote access is disabled on this agent, not opening remote ports for {}.", udId);
+                                sasPort = 0;
+                                uiaPort = 0;
+                            }
 
                             if (sasPort != 0) {
                                 AndroidSupplyTool.startShare(udId, sasPort);
@@ -119,6 +138,7 @@ public class TransportClient extends WebSocketClient {
                             if (uiaPort != 0) {
                                 try {
                                     AndroidDeviceBridgeTool.startUiaServer(iDevice, uiaPort);
+                                    OccupyMap.uiaPorts.put(udId, uiaPort);
                                 } catch (InstallException e) {
                                     log.error(e.getMessage());
                                 }
@@ -136,12 +156,19 @@ public class TransportClient extends WebSocketClient {
 
                             if (!SibTool.getDeviceList().contains(udId)) {
                                 log.info("Target device is not connecting, please check the connection.");
+                                iosRelease(udId);
                                 return;
                             }
 
                             int sibPort = jsonObject.getInteger("sibRemotePort");
                             int wdaPort = jsonObject.getInteger("wdaServerRemotePort");
                             int wdaMjpegPort = jsonObject.getInteger("wdaMjpegRemotePort");
+                            if (!RemoteAccessPolicy.isEnabled() && (sibPort != 0 || wdaPort != 0 || wdaMjpegPort != 0)) {
+                                log.info("Remote access is disabled on this agent, not opening remote ports for {}.", udId);
+                                sibPort = 0;
+                                wdaPort = 0;
+                                wdaMjpegPort = 0;
+                            }
 
                             if (sibPort != 0) {
                                 SibTool.startShare(udId, sibPort);
@@ -165,7 +192,7 @@ public class TransportClient extends WebSocketClient {
 
                     JSONObject jsonDebug = new JSONObject();
                     jsonDebug.put("msg", "debugUser");
-                    jsonDebug.put("token", token);
+                    jsonDebug.put("ticket", ticket);
                     jsonDebug.put("udId", udId);
                     TransportWorker.send(jsonDebug);
                 }
@@ -253,6 +280,8 @@ public class TransportClient extends WebSocketClient {
                         agentInfo.put("systemType", System.getProperty("os.name"));
                         agentInfo.put("host", host);
                         agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
+                        agentInfo.put("remoteAccess", RemoteAccessPolicy.isEnabled() ? 1 : 0);
+                        agentInfo.put("publicUrl", publicUrl);
                         TransportWorker.client.send(agentInfo.toJSONString());
                         IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
                         for (IDevice d : iDevices) {
@@ -422,6 +451,8 @@ public class TransportClient extends WebSocketClient {
     }
 
     private void androidRelease(String udId) {
+        releaseOccupant(udId);
+        OccupyMap.uiaPorts.remove(udId);
         AndroidDeviceLocalStatus.finish(udId);
         Thread s = AndroidThreadMap.getMap().get(String.format("%s-uia-thread", udId));
         if (s != null) {
@@ -433,6 +464,7 @@ public class TransportClient extends WebSocketClient {
     }
 
     private void iosRelease(String udId) {
+        releaseOccupant(udId);
         IOSDeviceLocalStatus.finish(udId);
         SibTool.stopShare(udId);
         if (IOSProcessMap.getMap().get(udId) != null) {
@@ -447,6 +479,13 @@ public class TransportClient extends WebSocketClient {
         }
         DevicesLockMap.unlockAndRemoveByUdId(udId);
         log.info("ios unlock udId：{}", udId);
+    }
+
+    private void releaseOccupant(String udId) {
+        String user = OccupyMap.users.remove(udId);
+        if (user != null) {
+            DeviceClaimMap.release(udId, user);
+        }
     }
 
     private void debugAndroidStep(JSONObject jsonObject) {

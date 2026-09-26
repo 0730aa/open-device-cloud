@@ -21,12 +21,12 @@ import jakarta.websocket.Session;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class BytesTool {
-    public static Map<Integer, Session> agentSessionMap = new HashMap<>();
+    public static Map<Integer, Session> agentSessionMap = new ConcurrentHashMap<>();
 
     public static void sendText(Session session, String message) {
         if (session == null || !session.isOpen()) {

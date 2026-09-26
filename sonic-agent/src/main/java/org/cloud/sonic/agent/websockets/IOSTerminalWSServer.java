@@ -28,7 +28,6 @@ import org.cloud.sonic.agent.common.config.WsEndpointConfigure;
 import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -38,21 +37,19 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/ios/terminal/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/ios/terminal/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class IOSTerminalWSServer implements IIOSWSServer {
-    @Value("${sonic.agent.key}")
-    private String key;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
             return;
         }
 
         if (!SibTool.getDeviceList().contains(udId)) {
             log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
             return;
         }
 
@@ -91,7 +88,9 @@ public class IOSTerminalWSServer implements IIOSWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        exit(session);
+        if (RemoteSessionGuard.release(session)) {
+            exit(session);
+        }
     }
 
     @OnError

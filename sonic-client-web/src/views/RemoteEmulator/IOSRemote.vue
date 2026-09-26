@@ -172,12 +172,41 @@ defineProps({
   lineMouseleave: Function,
 });
 
+/**
+ * Where the browser reaches the agent: its public URL when it has one (behind a TLS proxy or a
+ * tunnel), otherwise host:port, over wss whenever this page itself is served over https.
+ */
+const agentWsBase = () => {
+  if (agent.value.publicUrl) {
+    return agent.value.publicUrl.replace(/^http/i, 'ws');
+  }
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${agent.value.host}:${agent.value.port}`;
+};
+/**
+ * The agent only accepts short-lived remote tickets, so fetch a new one for every connection.
+ */
+const withTicket = (callback) => {
+  axios
+    .get('/controller/devices/remoteTicket', {
+      params: { id: device.value.id },
+    })
+    .then((resp) => {
+      if (resp.code === 2000) {
+        callback(resp.data.ticket);
+      }
+    });
+};
 const tabWebView = (port, id, transTitle) => {
-  title.value = transTitle;
-  isWebView.value = false;
-  iframeUrl.value = `/chrome/devtools/inspector.html?ws=${agent.value.host}:${agent.value.port}/websockets/webView/${agent.value.secretKey}/${port}/${id}`;
-  nextTick(() => {
-    iFrameHeight.value = document.body.clientHeight - 180;
+  withTicket((ticket) => {
+    title.value = transTitle;
+    isWebView.value = false;
+    // DevTools takes the agent address as ?ws= or ?wss= without the scheme.
+    const [scheme, address] = agentWsBase().split('://');
+    iframeUrl.value = `/chrome/devtools/inspector.html?${scheme}=${address}/websockets/webView/${ticket}/${device.value.udId}/${port}/${id}`;
+    nextTick(() => {
+      iFrameHeight.value = document.body.clientHeight - 180;
+    });
   });
 };
 
@@ -499,22 +528,16 @@ const setImgData = (data) => {
   };
   isShowImg.value = true;
 };
-const openSocket = (host, port, key, udId) => {
+const openSocket = (ticket, udId) => {
   if ('WebSocket' in window) {
     websocket = new WebSocket(
-      `ws://${host}:${port}/websockets/ios/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `${agentWsBase()}/websockets/ios/${ticket}/${udId}`
     );
     terminalWebsocket = new WebSocket(
-      `ws://${host}:${port}/websockets/ios/terminal/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `${agentWsBase()}/websockets/ios/terminal/${ticket}/${udId}`
     );
     screenWebsocket = new WebSocket(
-      `ws://${host}:${port}/websockets/ios/screen/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `${agentWsBase()}/websockets/ios/screen/${ticket}/${udId}`
     );
   } else {
     console.error($t('androidRemoteTS.noWebSocket'));
@@ -695,7 +718,11 @@ const screenWebsocketOnmessage = (message) => {
 const websocketOnmessage = (message) => {
   switch (JSON.parse(message.data).msg) {
     case 'share':
-      remoteSIBPort.value = JSON.parse(message.data).port;
+      // -1: the agent does not allow remote SIB
+      remoteSIBPort.value =
+        JSON.parse(message.data).isEnable === false
+          ? -1
+          : JSON.parse(message.data).port;
       break;
     case 'perfDetail':
       iosPerfRef.value.setData(JSON.parse(message.data).detail);
@@ -750,6 +777,12 @@ const websocketOnmessage = (message) => {
       break;
     }
     case 'proxyResult': {
+      if (JSON.parse(message.data).isEnable === false) {
+        ElMessage.error({
+          message: $t('androidRemoteTS.code.noAgent'),
+        });
+        break;
+      }
       proxyWebPort.value = JSON.parse(message.data).webPort;
       proxyConnPort.value = JSON.parse(message.data).port;
       nextTick(() => {
@@ -1255,12 +1288,9 @@ const getDeviceById = (id) => {
         .then((resp) => {
           if (resp.code === 2000) {
             agent.value = resp.data;
-            openSocket(
-              agent.value.host,
-              agent.value.port,
-              agent.value.secretKey,
-              device.value.udId
-            );
+            withTicket((ticket) => {
+              openSocket(ticket, device.value.udId);
+            });
           }
         });
     }
@@ -1798,6 +1828,17 @@ const checkAlive = () => {
                   <el-tab-pane :label="$t('IOSRemote.remoteSIB')">
                     <div style="padding: 13px 0">
                       <div
+                        v-if="remoteSIBPort < 0"
+                        style="margin-top: 20px; margin-bottom: 20px"
+                      >
+                        <el-card>
+                          <strong>{{
+                            $t('androidRemoteTS.code.noAgent')
+                          }}</strong>
+                        </el-card>
+                      </div>
+                      <div
+                        v-else
                         v-loading="remoteSIBPort === 0"
                         element-loading-background="rgba(255, 255, 255, 1)"
                         style="margin-top: 20px; margin-bottom: 20px"

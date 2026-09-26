@@ -46,7 +46,7 @@ public class AlertRobotsController {
     @Autowired
     private AlertRobotsService alertRobotsService;
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "更新机器人参数", description = "新增或更新对应的机器人")
     @PutMapping
     public RespModel<String> save(@Validated @RequestBody AlertRobotsDTO alertRobotsDTO) {
@@ -54,7 +54,7 @@ public class AlertRobotsController {
         return new RespModel<>(RespEnum.UPDATE_OK);
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "查找项目机器人参数", description = "查找对应项目id的机器人参数列表")
     @GetMapping("/list")
     @Parameters(value = {
@@ -72,7 +72,7 @@ public class AlertRobotsController {
         return new RespModel<>(RespEnum.SEARCH_OK, alertRobotsService.findRobots(new Page<>(page, pageSize), projectId, scene));
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "查找项目机器人参数", description = "查找对应项目id的机器人参数列表")
     @GetMapping("/listAll")
     @Parameters(value = {

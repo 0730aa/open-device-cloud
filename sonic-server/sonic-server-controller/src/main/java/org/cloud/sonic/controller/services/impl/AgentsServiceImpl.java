@@ -22,14 +22,17 @@ import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.controller.mapper.AgentsMapper;
 import org.cloud.sonic.controller.models.domain.Agents;
+import org.cloud.sonic.controller.models.domain.DeviceSessions;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
 import org.cloud.sonic.controller.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,10 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
     private AlertRobotsServiceImpl alertRobotsService;
     @Autowired
     private AgentsMapper agentsMapper;
+    @Autowired
+    private DeviceSessionsService deviceSessionsService;
+    @Value("${sonic.permission.superAdmin}")
+    private String superAdmin;
 
     @Override
     public List<Agents> findAgents() {
@@ -53,7 +60,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
     }
 
     @Override
-    public void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds) {
+    public void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds, String ownerName) {
         if (id == 0) {
             Agents agents = new Agents();
             agents.setName(name);
@@ -69,6 +76,8 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
             agents.setRobotSecret(robotSecret);
             agents.setSecretKey(UUID.randomUUID().toString());
             agents.setHasHub(0);
+            agents.setRemoteAccess(0);
+            agents.setOwnerName(ownerName == null ? "" : ownerName);
             agents.setAlertRobotIds(alertRobotIds);
             save(agents);
         } else {
@@ -98,6 +107,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
                     && (!devices.getStatus().equals(DeviceStatus.DISCONNECTED))) {
                 devices.setStatus(DeviceStatus.OFFLINE);
                 devicesService.save(devices);
+                deviceSessionsService.end(devices.getId(), DeviceSessions.AGENT_OFFLINE);
             }
         }
     }
@@ -115,6 +125,9 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
                 if (jsonObject.getInteger("hasHub") != null) {
                     oldAgent.setHasHub(jsonObject.getInteger("hasHub"));
                 }
+                // Agents that predate the flag never report it and so never allow remote ports.
+                oldAgent.setRemoteAccess(Integer.valueOf(1).equals(jsonObject.getInteger("remoteAccess")) ? 1 : 0);
+                oldAgent.setPublicUrl(normalizePublicUrl(jsonObject.getString("publicUrl")));
                 save(oldAgent);
             }
         }
@@ -147,6 +160,26 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
         } else {
             return false;
         }
+    }
+
+    /**
+     * Browsers open WebSockets to this URL, so only accept scheme://host[:port][/path] made of URL-safe
+     * characters; anything else is dropped.
+     */
+    static String normalizePublicUrl(String publicUrl) {
+        if (publicUrl == null || !publicUrl.matches("(?i)(https?|wss?)://[a-z0-9.-]+(:\\d{1,5})?(/[a-z0-9._~%/-]*)?")) {
+            return "";
+        }
+        return publicUrl.replaceAll("/+$", "");
+    }
+
+    @Override
+    public boolean canManage(Agents agents, String userName) {
+        if (agents == null || userName == null) {
+            return false;
+        }
+        return userName.equals(superAdmin)
+                || (!ObjectUtils.isEmpty(agents.getOwnerName()) && agents.getOwnerName().equals(userName));
     }
 
     @Override
