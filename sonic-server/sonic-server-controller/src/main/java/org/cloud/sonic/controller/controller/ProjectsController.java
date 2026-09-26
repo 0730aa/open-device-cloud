@@ -49,7 +49,7 @@ public class ProjectsController {
     @Autowired
     private ProjectsService projectsService;
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "更新项目信息", description = "新增或更新项目信息")
     @PutMapping
     public RespModel<String> save(@Validated @RequestBody ProjectsDTO projects) {
@@ -57,7 +57,7 @@ public class ProjectsController {
         return new RespModel<>(RespEnum.UPDATE_OK);
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @WhiteUrl
     @Operation(summary = "查找所有项目", description = "查找所有项目列表")
     @GetMapping("/list")
@@ -68,7 +68,7 @@ public class ProjectsController {
         );
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "查询项目信息", description = "查找对应id下的详细信息")
     @Parameter(name = "id", description = "项目id")
     @GetMapping

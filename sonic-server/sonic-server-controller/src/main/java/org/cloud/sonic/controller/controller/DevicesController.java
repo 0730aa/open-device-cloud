@@ -74,7 +74,7 @@ public class DevicesController {
         return devicesService.release(udId, token);
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "获取远程控制票据", description = "为当前用户签发短时效票据，用于连接设备所在Agent；设备需空闲或正被该用户使用")
     @Parameter(name = "id", description = "设备id")
     @GetMapping("/remoteTicket")
@@ -112,7 +112,7 @@ public class DevicesController {
                 devicesService.listByAgentId(agentId));
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "修改设备安装密码", description = "修改对应设备id的安装密码")
     @PutMapping("/saveDetail")
     public RespModel<String> saveDetail(@Validated @RequestBody DeviceDetailChange deviceDetailChange) {

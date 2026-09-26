@@ -79,6 +79,15 @@ public class PermissionFilter extends OncePerRequestFilter {
 
         String token = request.getHeader(TOKEN);
 
+        // The gateway checks signatures too, but a request that reaches the controller any other
+        // way must not be able to claim any user (super admin included) with an unsigned token.
+        if (token != null && !jwtTokenTool.verify(token)) {
+            response.setContentType("text/plain;charset=UTF-8");
+            JSONObject re = (JSONObject) JSONObject.toJSON(process(request, new RespModel(RespEnum.UNAUTHORIZED)));
+            response.getWriter().write(re.toJSONString());
+            return;
+        }
+
         if (permissionEnable && token != null && !request.getMethod().equalsIgnoreCase("options")) {
             String userName = jwtTokenTool.getUserName(token);
 

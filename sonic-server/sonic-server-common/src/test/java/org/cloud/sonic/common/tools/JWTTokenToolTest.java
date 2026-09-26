@@ -10,6 +10,7 @@ import java.util.Date;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JWTTokenToolTest {
@@ -61,6 +62,16 @@ class JWTTokenToolTest {
     void missingOrMalformedInternalTokenIsRejected() {
         assertFalse(tool.verifyInternal(null));
         assertFalse(tool.verifyInternal("not-a-jwt"));
+    }
+
+    @Test
+    void refusesToStartWithTheOldDefaultOrAShortSecret() {
+        assertThrows(IllegalStateException.class, () -> newTool("sonic").checkSecret());
+        assertThrows(IllegalStateException.class, () -> newTool("").checkSecret());
+        assertThrows(IllegalStateException.class, () -> newTool(null).checkSecret());
+        assertThrows(IllegalStateException.class, () -> newTool(" ".repeat(40)).checkSecret());
+        assertThrows(IllegalStateException.class, () -> newTool("x".repeat(JWTTokenTool.MIN_SECRET_LENGTH - 1)).checkSecret());
+        newTool(SECRET).checkSecret();
     }
 
     private static JWTTokenTool newTool(String secret) {

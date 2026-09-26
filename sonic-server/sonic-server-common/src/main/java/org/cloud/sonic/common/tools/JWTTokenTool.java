@@ -22,6 +22,7 @@ import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
@@ -43,11 +44,25 @@ public class JWTTokenTool {
     private static final String SCOPE_CLAIM = "scope";
     private static final String INTERNAL_SCOPE = "sonic-internal";
     private static final long INTERNAL_TOKEN_TTL_MILLIS = 60_000L;
+    static final int MIN_SECRET_LENGTH = 32;
 
     @Value("${sonic.token.secret}")
     private String TOKEN_SECRET;
     @Value("${sonic.token.expireDay}")
     private int EXPIRE_DAY;
+
+    /**
+     * Whoever knows the secret can sign a token for any user, super admin included, so refuse to
+     * start with a missing or guessable one (it used to default to "sonic").
+     */
+    @PostConstruct
+    void checkSecret() {
+        if (TOKEN_SECRET == null || TOKEN_SECRET.trim().length() < MIN_SECRET_LENGTH) {
+            throw new IllegalStateException("sonic.token.secret (env SECRET_KEY) must be a random string of at least "
+                    + MIN_SECRET_LENGTH + " characters, e.g. the output of `openssl rand -base64 48`, "
+                    + "and the same for every server component.");
+        }
+    }
 
     /**
      * @param username

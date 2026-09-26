@@ -59,7 +59,7 @@ public class AgentsController {
         return new RespModel<>(RespEnum.HANDLE_OK);
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "查询所有Agent端", description = "获取所有Agent端以及详细信息")
     @GetMapping("/list")
     public RespModel<List<AgentsDTO>> findAgents() {
@@ -69,7 +69,7 @@ public class AgentsController {
         );
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "修改agent信息", description = "修改agent信息")
     @PutMapping("/update")
     public RespModel<String> update(@RequestBody AgentsDTO jsonObject) {

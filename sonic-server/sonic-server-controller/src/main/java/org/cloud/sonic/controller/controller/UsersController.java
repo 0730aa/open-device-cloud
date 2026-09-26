@@ -69,7 +69,7 @@ public class UsersController {
         return new RespModel(RespEnum.SEARCH_OK, usersService.getLoginConfig());
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @Operation(summary = "生成用户对外Token", description = "生成用户对外Token")
     @GetMapping("/generateToken")
     public RespModel<String> generateToken(@RequestParam(name = "day") int day, HttpServletRequest request) {
@@ -81,7 +81,7 @@ public class UsersController {
         }
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @WhiteUrl
     @Operation(summary = "登录", description = "用户登录")
     @PostMapping("/login")
@@ -94,7 +94,7 @@ public class UsersController {
         }
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @WhiteUrl
     @Operation(summary = "注册", description = "注册用户")
     @PostMapping("/register")
@@ -125,7 +125,7 @@ public class UsersController {
         }
     }
 
-    @WebAspect
+    @WebAspect(sensitive = true)
     @WhiteUrl
     @Operation(summary = "修改密码", description = "修改token的用户密码")
     @PutMapping
