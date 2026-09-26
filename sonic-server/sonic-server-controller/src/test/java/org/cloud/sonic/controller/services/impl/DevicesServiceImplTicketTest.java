@@ -8,6 +8,7 @@ import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.tools.RemoteTicketTool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,12 +27,14 @@ class DevicesServiceImplTicketTest {
 
     private final Agents agent = new Agents().setId(3).setSecretKey("agent-3-key").setStatus(AgentStatus.ONLINE);
     private final AgentsService agentsService = mock(AgentsService.class);
+    private final DeviceSessionsService deviceSessionsService = mock(DeviceSessionsService.class);
     private DevicesServiceImpl devicesService;
 
     @BeforeEach
     void setUp() {
         devicesService = spy(new DevicesServiceImpl());
         ReflectionTestUtils.setField(devicesService, "agentsService", agentsService);
+        ReflectionTestUtils.setField(devicesService, "deviceSessionsService", deviceSessionsService);
         when(agentsService.findById(3)).thenReturn(agent);
     }
 
@@ -90,9 +93,12 @@ class DevicesServiceImplTicketTest {
         devicesService.updateDevicesUser(debugUser("forged"));
         assertEquals("", device.getUser());
         verify(devicesService, never()).save(any(Devices.class));
+        verify(deviceSessionsService, never()).start(any(), any(), any(), any());
 
-        devicesService.updateDevicesUser(debugUser(RemoteTicketTool.issue(agent, "serial-1", "alice")));
+        String ticket = RemoteTicketTool.issue(agent, "serial-1", "alice");
+        devicesService.updateDevicesUser(debugUser(ticket));
         assertEquals("alice", device.getUser());
+        verify(deviceSessionsService).start(device, agent, "alice", com.auth0.jwt.JWT.decode(ticket).getId());
     }
 
     private Devices givenDevice(String status, String user) {

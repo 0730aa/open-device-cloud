@@ -19,6 +19,7 @@ package org.cloud.sonic.controller.services.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -28,6 +29,7 @@ import org.cloud.sonic.common.http.RespModel;
 import org.cloud.sonic.controller.mapper.DevicesMapper;
 import org.cloud.sonic.controller.mapper.TestSuitesDevicesMapper;
 import org.cloud.sonic.controller.models.domain.Agents;
+import org.cloud.sonic.controller.models.domain.DeviceSessions;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.domain.TestSuitesDevices;
 import org.cloud.sonic.controller.models.domain.Users;
@@ -38,6 +40,7 @@ import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.models.interfaces.PlatformType;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.UsersService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
@@ -76,6 +79,8 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
     private TestSuitesDevicesMapper testSuitesDevicesMapper;
     @Autowired
     private AgentsService agentsService;
+    @Autowired
+    private DeviceSessionsService deviceSessionsService;
 
     @Override
     public RespModel occupy(OccupyParams occupyParams, String token) {
@@ -209,14 +214,15 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         if (devices == null) {
             return;
         }
-        String userName = RemoteTicketTool.verify(agentsService.findById(devices.getAgentId()),
-                devices.getUdId(), jsonObject.getString("ticket"));
-        if (userName == null) {
+        Agents agents = agentsService.findById(devices.getAgentId());
+        DecodedJWT ticket = RemoteTicketTool.decode(agents, devices.getUdId(), jsonObject.getString("ticket"));
+        if (ticket == null) {
             log.warn("Agent {} reported a user of {} without a valid ticket, ignored.", devices.getAgentId(), devices.getUdId());
             return;
         }
-        devices.setUser(userName);
+        devices.setUser(ticket.getSubject());
         save(devices);
+        deviceSessionsService.start(devices, agents, ticket.getSubject(), ticket.getId());
     }
 
     @Override
@@ -416,8 +422,20 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         }
         if (jsonMsg.getString("status") != null) {
             devices.setStatus(jsonMsg.getString("status"));
+            // Metering: a session lasts while the device is being debugged by its user.
+            if (devices.getId() != null && !DeviceStatus.DEBUGGING.equals(devices.getStatus())) {
+                deviceSessionsService.end(devices.getId(), sessionEndReason(devices.getStatus()));
+            }
         }
         save(devices);
+    }
+
+    private static String sessionEndReason(String status) {
+        return switch (status) {
+            case DeviceStatus.ONLINE -> DeviceSessions.RELEASED;
+            case DeviceStatus.TESTING -> DeviceSessions.SUPERSEDED;
+            default -> DeviceSessions.DEVICE_LOST;
+        };
     }
 
     /**

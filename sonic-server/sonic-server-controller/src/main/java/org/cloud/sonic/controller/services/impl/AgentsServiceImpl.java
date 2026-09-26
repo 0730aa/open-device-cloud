@@ -22,10 +22,12 @@ import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.controller.mapper.AgentsMapper;
 import org.cloud.sonic.controller.models.domain.Agents;
+import org.cloud.sonic.controller.models.domain.DeviceSessions;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
 import org.cloud.sonic.controller.transport.TransportWorker;
@@ -47,6 +49,8 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
     private AlertRobotsServiceImpl alertRobotsService;
     @Autowired
     private AgentsMapper agentsMapper;
+    @Autowired
+    private DeviceSessionsService deviceSessionsService;
     @Value("${sonic.permission.superAdmin}")
     private String superAdmin;
 
@@ -103,6 +107,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
                     && (!devices.getStatus().equals(DeviceStatus.DISCONNECTED))) {
                 devices.setStatus(DeviceStatus.OFFLINE);
                 devicesService.save(devices);
+                deviceSessionsService.end(devices.getId(), DeviceSessions.AGENT_OFFLINE);
             }
         }
     }

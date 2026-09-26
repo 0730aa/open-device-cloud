@@ -12,6 +12,7 @@ import org.cloud.sonic.controller.models.dto.AgentsDTO;
 import org.cloud.sonic.controller.models.http.DeviceDetailChange;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.impl.AgentsServiceImpl;
 import org.cloud.sonic.controller.services.impl.DevicesServiceImpl;
@@ -123,6 +124,7 @@ class OwnershipTest {
         doReturn(null).when(agentsService).findById(5);
         DevicesServiceImpl devicesService = spy(new DevicesServiceImpl());
         ReflectionTestUtils.setField(devicesService, "agentsService", agentsService);
+        ReflectionTestUtils.setField(devicesService, "deviceSessionsService", mock(DeviceSessionsService.class));
         Devices device = new Devices().setId(10).setAgentId(1).setUdId("serial-1").setStatus(DeviceStatus.ONLINE);
         doReturn(device).when(devicesService).findByUdId("serial-1");
         doReturn(true).when(devicesService).save(any(Devices.class));

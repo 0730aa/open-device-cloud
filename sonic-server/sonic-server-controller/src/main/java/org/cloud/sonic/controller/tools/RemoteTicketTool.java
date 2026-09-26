@@ -18,6 +18,7 @@ package org.cloud.sonic.controller.tools;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import org.cloud.sonic.controller.models.domain.Agents;
 
 import java.util.Date;
@@ -59,6 +60,15 @@ public class RemoteTicketTool {
      * ticket for this device on this agent.
      */
     public static String verify(Agents agent, String udId, String ticket) {
+        DecodedJWT decoded = decode(agent, udId, ticket);
+        return decoded == null ? null : decoded.getSubject();
+    }
+
+    /**
+     * @return the verified ticket (subject is the user, id identifies the ticket), or null
+     * unless it is a valid, unexpired ticket for this device on this agent.
+     */
+    public static DecodedJWT decode(Agents agent, String udId, String ticket) {
         if (agent == null || ticket == null || udId == null
                 || agent.getSecretKey() == null || agent.getSecretKey().isEmpty()) {
             return null;
@@ -69,8 +79,7 @@ public class RemoteTicketTool {
                     .withClaim(UDID_CLAIM, udId)
                     .acceptLeeway(LEEWAY_SECONDS)
                     .build()
-                    .verify(ticket)
-                    .getSubject();
+                    .verify(ticket);
         } catch (Exception e) {
             return null;
         }
