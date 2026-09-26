@@ -8,6 +8,8 @@ sonic:
     key: ${AGENT_KEY:235a35fd-5d0d-4533-905d-30d32902a12b}
     # Optional URL browsers use to reach this agent behind a TLS proxy or tunnel | 可选：浏览器经TLS代理或隧道访问本Agent的地址
     public-url: ${AGENT_PUBLIC_URL:}
+    # Optional platform relay to connect out to, e.g. behind a home router | 可选：主动连接的平台中继，如位于家用路由器之后时
+    relay-url: ${AGENT_RELAY_URL:}
     script:
       # Groovy/Python script steps run arbitrary code here | 脚本步骤会在本机执行任意代码
       enable: ${AGENT_SCRIPT_ENABLE:false}

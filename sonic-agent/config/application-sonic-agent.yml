@@ -10,6 +10,12 @@ sonic:
     # (e.g. https://phone-1.example.com). Leave empty to use host:port. | 可选：浏览器访问本Agent的地址，用于Agent位于
     # TLS反向代理或内网穿透隧道之后的情况（如 https://phone-1.example.com），留空则使用host:port
     public-url:
+    # Optional: connect out to the platform's relay (sonic-server-relay), e.g. https://relay.example.com, so browsers reach
+    # this agent through it. For machines that cannot accept connections from the internet, such as behind a home router;
+    # browsers then use this URL unless public-url is set. | 可选：主动连接平台的中继（sonic-server-relay），如
+    # https://relay.example.com，浏览器经中继访问本Agent。适用于无法接受外网连接的机器（如家用路由器之后）；
+    # 未设置public-url时浏览器即使用此地址
+    relay-url:
     script:
       # Groovy/Python script steps run arbitrary code on this machine. Only enable if you trust everyone
       # who can write test cases on the server. | 脚本步骤会在本机执行任意代码，只有完全信任所有能编写用例的人时才开启

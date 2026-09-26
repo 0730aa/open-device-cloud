@@ -33,6 +33,7 @@ import org.cloud.sonic.agent.common.enums.AndroidKey;
 import org.cloud.sonic.agent.common.interfaces.DeviceStatus;
 import org.cloud.sonic.agent.common.interfaces.PlatformType;
 import org.cloud.sonic.agent.common.maps.*;
+import org.cloud.sonic.agent.relay.RelayClient;
 import org.cloud.sonic.agent.tests.AndroidTests;
 import org.cloud.sonic.agent.tests.IOSTests;
 import org.cloud.sonic.agent.tests.SuiteListener;
@@ -64,6 +65,8 @@ public class TransportClient extends WebSocketClient {
     String version = String.valueOf(SpringTool.getPropertiesValue("spring.version"));
     Integer port = Integer.valueOf(SpringTool.getPropertiesValue("sonic.agent.port"));
     String publicUrl = SpringTool.getPropertiesValue("sonic.agent.public-url:");
+    String relayUrl = SpringTool.getPropertiesValue("sonic.agent.relay-url:");
+    boolean agentTls = Boolean.parseBoolean(SpringTool.getPropertiesValue("server.ssl.enabled:false"));
 
     public TransportClient(URI serverUri) {
         super(serverUri);
@@ -78,6 +81,11 @@ public class TransportClient extends WebSocketClient {
     public void onMessage(String s) {
         JSONObject jsonObject = JSON.parseObject(s);
         if (jsonObject.getString("msg").equals("pong")) {
+            return;
+        }
+        if (jsonObject.getString("msg").equals("relayToken")) {
+            // Not logged: whoever holds the token can register as this agent with the relay.
+            RelayClient.onToken(jsonObject.getString("token"));
             return;
         }
         log.info("Agent <- Server message: {}", jsonObject);
@@ -282,8 +290,9 @@ public class TransportClient extends WebSocketClient {
                         agentInfo.put("host", host);
                         agentInfo.put("hasHub", PHCTool.isSupport() ? 1 : 0);
                         agentInfo.put("remoteAccess", RemoteAccessPolicy.isEnabled() ? 1 : 0);
-                        agentInfo.put("publicUrl", publicUrl);
+                        agentInfo.put("publicUrl", RelayClient.browserUrl(publicUrl, relayUrl));
                         TransportWorker.client.send(agentInfo.toJSONString());
+                        RelayClient.start(relayUrl, port, agentTls);
                         IDevice[] iDevices = AndroidDeviceBridgeTool.getRealOnLineDevices();
                         for (IDevice d : iDevices) {
                             String status = AndroidDeviceManagerMap.getStatusMap().get(d.getSerialNumber());
