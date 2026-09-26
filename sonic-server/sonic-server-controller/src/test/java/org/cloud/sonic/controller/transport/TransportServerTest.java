@@ -10,6 +10,7 @@ import org.cloud.sonic.controller.services.AgentsService;
 import org.cloud.sonic.controller.services.ConfListService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.tools.BytesTool;
+import org.cloud.sonic.controller.tools.RelayTokenTool;
 import org.cloud.sonic.controller.tools.RemoteTicketKeys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,8 @@ class TransportServerTest {
     private ConfListService confListService;
     @Mock
     private RemoteTicketKeys remoteTicketKeys;
+    @Mock
+    private RelayTokenTool relayTokenTool;
 
     @InjectMocks
     private TransportServer transportServer;
@@ -141,6 +144,22 @@ class TransportServerTest {
         transportServer.onMessage("{\"msg\":\"ping\",\"agentId\":2}", session);
 
         verify(remote).sendText("{\"msg\":\"pong\"}");
+    }
+
+    @Test
+    void relayTokenIsIssuedForTheAuthenticatedAgentOnly() throws Exception {
+        Session session = authenticatedSession(1);
+        RemoteEndpoint.Basic remote = session.getBasicRemote();
+        when(relayTokenTool.issue(1)).thenReturn("relay-token-for-1");
+
+        transportServer.onMessage("{\"msg\":\"relayToken\",\"agentId\":2}", session);
+
+        verify(relayTokenTool, never()).issue(2);
+        ArgumentCaptor<String> sent = ArgumentCaptor.forClass(String.class);
+        verify(remote, times(2)).sendText(sent.capture());
+        JSONObject reply = JSONObject.parseObject(sent.getAllValues().get(1));
+        assertEquals("relayToken", reply.getString("msg"));
+        assertEquals("relay-token-for-1", reply.getString("token"));
     }
 
     private Session authenticatedSession(int agentId) throws Exception {

@@ -32,6 +32,7 @@ import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.ConfType;
 import org.cloud.sonic.controller.services.*;
 import org.cloud.sonic.controller.tools.BytesTool;
+import org.cloud.sonic.controller.tools.RelayTokenTool;
 import org.cloud.sonic.controller.tools.RemoteTicketKeys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -64,6 +65,8 @@ public class TransportServer {
     private ConfListService confListService;
     @Autowired
     private RemoteTicketKeys remoteTicketKeys;
+    @Autowired
+    private RelayTokenTool relayTokenTool;
 
     @OnOpen
     public void onOpen(Session session, @PathParam("agentKey") String agentKey) throws IOException {
@@ -123,6 +126,13 @@ public class TransportServer {
             case "debugUser":
                 devicesService.updateDevicesUser(jsonMsg);
                 break;
+            case "relayToken": {
+                JSONObject relayToken = new JSONObject();
+                relayToken.put("msg", "relayToken");
+                relayToken.put("token", relayTokenTool.issue(agentId));
+                BytesTool.sendText(session, relayToken.toJSONString());
+                break;
+            }
             case "heartBeat":
                 Agents agentsOnline = agentsService.findById(jsonMsg.getInteger("agentId"));
                 if (agentsOnline.getStatus() != AgentStatus.ONLINE) {
