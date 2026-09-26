@@ -13,12 +13,18 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.ECPrivateKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECGenParameterSpec;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static com.auth0.jwt.JWT.create;
-import static com.auth0.jwt.algorithms.Algorithm.HMAC256;
+import static com.auth0.jwt.algorithms.Algorithm.ECDSA256;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -29,21 +35,26 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class RemoteSessionGuardTest {
-    private static final String KEY = "guard-test-agent-key";
+    private static KeyPair platformKey;
 
     private int agentIdBefore;
 
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
+        if (platformKey == null) {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+            generator.initialize(new ECGenParameterSpec("secp256r1"));
+            platformKey = generator.generateKeyPair();
+        }
         agentIdBefore = BytesTool.agentId;
         BytesTool.agentId = 7;
-        new RemoteTicketVerifier().setKey(KEY);
+        RemoteTicketVerifier.setPublicKey(Base64.getEncoder().encodeToString(platformKey.getPublic().getEncoded()));
     }
 
     @After
     public void tearDown() {
         BytesTool.agentId = agentIdBefore;
-        new RemoteTicketVerifier().setKey(null);
+        RemoteTicketVerifier.setPublicKey(null);
         AndroidWebViewMap.getMap().clear();
     }
 
@@ -116,7 +127,7 @@ public class RemoteSessionGuardTest {
     private static String ticket(String user, String udId) {
         return create().withSubject(user).withClaim("aid", 7).withClaim("udId", udId)
                 .withExpiresAt(new java.util.Date(System.currentTimeMillis() + 60_000))
-                .sign(HMAC256(KEY));
+                .sign(ECDSA256((ECPublicKey) platformKey.getPublic(), (ECPrivateKey) platformKey.getPrivate()));
     }
 
     private static CloseReason.CloseCode closeCode(Session session) throws Exception {

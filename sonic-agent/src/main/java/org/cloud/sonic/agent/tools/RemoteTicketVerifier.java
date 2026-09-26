@@ -19,15 +19,20 @@ package org.cloud.sonic.agent.tools;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.Verification;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
+
+import java.security.KeyFactory;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 
 /**
- * Checks remote tickets: short-lived JWTs the server signs with this agent's key to let one
- * user connect to one device. Browsers never learn the agent key, so a ticket is the only way
- * in. The claims must match sonic-server's RemoteTicketTool.
+ * Checks remote tickets: short-lived ES256 JWTs the server signs with the platform key to let one
+ * user connect to one device on this agent. The agent only holds the public key, received when it
+ * authenticates to the server, so it can check tickets but cannot issue any. The claims must
+ * match sonic-server's RemoteTicketTool.
  */
-@Component
+@Slf4j
 public class RemoteTicketVerifier {
     static final String AGENT_CLAIM = "aid";
     static final String UDID_CLAIM = "udId";
@@ -36,11 +41,23 @@ public class RemoteTicketVerifier {
      */
     static final long LEEWAY_SECONDS = 60;
 
-    private static volatile String key;
+    private static volatile ECPublicKey publicKey;
 
-    @Value("${sonic.agent.key}")
-    public void setKey(String key) {
-        RemoteTicketVerifier.key = key;
+    /**
+     * @param encoded base64 X.509 encoding of the platform's public key, as sent by the server
+     */
+    public static void setPublicKey(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            publicKey = null;
+            return;
+        }
+        try {
+            publicKey = (ECPublicKey) KeyFactory.getInstance("EC")
+                    .generatePublic(new X509EncodedKeySpec(Base64.getDecoder().decode(encoded.trim())));
+        } catch (Exception e) {
+            publicKey = null;
+            log.error("Invalid remote ticket key from the server, remote connections will be refused.");
+        }
     }
 
     /**
@@ -48,12 +65,12 @@ public class RemoteTicketVerifier {
      * ticket for this device on this agent.
      */
     public static String verify(String ticket, String udId) {
-        String agentKey = key;
-        if (agentKey == null || agentKey.isEmpty() || ticket == null || udId == null) {
+        ECPublicKey key = publicKey;
+        if (key == null || ticket == null || udId == null) {
             return null;
         }
         try {
-            Verification verification = JWT.require(Algorithm.HMAC256(agentKey))
+            Verification verification = JWT.require(Algorithm.ECDSA256(key, null))
                     .withClaim(UDID_CLAIM, udId)
                     .acceptLeeway(LEEWAY_SECONDS);
             if (BytesTool.agentId > 0) {

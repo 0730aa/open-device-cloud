@@ -48,6 +48,8 @@ services:
       - SECRET_KEY
       - EXPIRE_DAY
       - REGISTER_ENABLE
+      - TICKET_PRIVATE_KEY
+      - TICKET_PUBLIC_KEY
       - NORMAL_USER_ENABLE
       - LDAP_USER_ENABLE
       - LDAP_USER_ID

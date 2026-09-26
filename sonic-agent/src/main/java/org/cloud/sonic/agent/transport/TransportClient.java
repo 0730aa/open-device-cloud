@@ -270,6 +270,7 @@ public class TransportClient extends WebSocketClient {
                         BytesTool.highTemp = jsonObject.getInteger("highTemp");
                         BytesTool.highTempTime = jsonObject.getInteger("highTempTime");
                         BytesTool.remoteTimeout = jsonObject.getInteger("remoteTimeout");
+                        RemoteTicketVerifier.setPublicKey(jsonObject.getString("ticketKey"));
                         BytesTool.agentHost = host;
                         TransportWorker.client = this;
                         JSONObject agentInfo = new JSONObject();

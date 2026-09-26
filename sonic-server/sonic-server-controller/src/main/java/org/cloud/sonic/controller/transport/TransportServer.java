@@ -32,6 +32,7 @@ import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.ConfType;
 import org.cloud.sonic.controller.services.*;
 import org.cloud.sonic.controller.tools.BytesTool;
+import org.cloud.sonic.controller.tools.RemoteTicketKeys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +62,8 @@ public class TransportServer {
 
     @Autowired
     private ConfListService confListService;
+    @Autowired
+    private RemoteTicketKeys remoteTicketKeys;
 
     @OnOpen
     public void onOpen(Session session, @PathParam("agentKey") String agentKey) throws IOException {
@@ -88,6 +91,8 @@ public class TransportServer {
             auth.put("highTemp", authResult.getHighTemp());
             auth.put("highTempTime", authResult.getHighTempTime());
             auth.put("remoteTimeout", confListService.searchByKey(ConfType.REMOTE_DEBUG_TIMEOUT).getContent());
+            // Lets the agent check remote tickets without being able to issue them.
+            auth.put("ticketKey", remoteTicketKeys.encodedPublicKey());
             BytesTool.sendText(session, auth.toJSONString());
         }
     }
