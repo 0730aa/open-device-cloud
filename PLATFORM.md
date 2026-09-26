@@ -118,6 +118,14 @@ server {
 - 中继只能跑一个实例：agent 和浏览器必须连到同一个中继进程。要多实例，需要按 agent 分片路由。
 - 只转发远控用的 WebSocket（画面、控制、终端、音频、WebView 调试）。远程 ADB/SIB/WDA/UIA2 和抓包仍然只能在可信网络里用 `remote-access.enable` 开启，不经过中继。
 
+### 注册中心（Eureka）加上鉴权（`2120cdb`）
+
+上游的 Eureka 配置把 `/eureka/**` 整个排除在鉴权之外，`SONIC_EUREKA_USERNAME` / `SONIC_EUREKA_PASSWORD` 只保护了管理页面；docker-compose 又把它的端口发布到了宿主机上。结果是：任何能访问这个端口的人，不需要密码就能注册一个假的 `sonic-server-controller`（测试里对原配置发起注册，返回的是 204，注册成功）。网关会把一部分用户的登录请求、token，以及 agent 连接（URL 里带着 agent 密钥）转给它，攻击者还能读取注册表、注销真实实例。现在：
+
+- 注册中心的接口必须带上这组账号密码（HTTP Basic）才能访问，只有健康检查保持开放；管理页面仍然用登录页。
+- `SONIC_EUREKA_PASSWORD` 少于 16 位或含有 URL 里不能出现的字符时，注册中心拒绝启动，所以 `.env` 自带的 `sonic` 不能再用。密码会被拼进各组件的注册中心 URL，只能用字母、数字和 `._~-`，可以用 `openssl rand -hex 24` 生成；所有服务端组件必须一致。
+- docker-compose 不再对外发布注册中心的端口，只有同一个 Docker 网络里的服务端组件能访问。
+
 ## 构建与测试
 
 ```bash
@@ -132,7 +140,7 @@ cd sonic-client-web && npm ci
 NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" npm run build
 ```
 
-目前的测试数量：server 端 common 9 个、controller 49 个、relay 20 个；agent 43 个。
+目前的测试数量：server 端 common 9 个、controller 49 个、relay 20 个、eureka 7 个；agent 43 个。
 
 有两点需要注意：
 
@@ -141,7 +149,7 @@ NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" 
 
 ## 开放给外部机主之前还要解决的问题
 
-非对称签名的票据和中继网关已经完成（见"第 1 阶段"一节），剩下这些：
+非对称签名的票据、中继网关和注册中心的鉴权已经完成（见"第 1 阶段"一节），剩下这些：
 
 1. **使用时长还没有对账。** 中继已经按连接记录流量日志，但还没有和 `device_sessions` 自动核对，时长仍以 agent 上报为准。
 2. **测试管理仍然是单租户的。** 项目、用例、结果、全局参数对所有用户可见；`/projects/list` 在网关上免登录，而且还带着已废弃的机器人密钥字段。
@@ -149,10 +157,9 @@ NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" 
 4. **设备以序列号作为全局唯一键。** 很多廉价机的序列号是重复的（比如 `0123456789ABCDEF`），不同机主之间会冲突。需要改用平台分配的设备身份，并结合 Key Attestation 校验真机。
 5. **iOS 仍有暴露的端口。** sib 开启的 WDA 端口和绑定地址由 sib 本身决定。建议第 0、1 阶段只做 Android。
 6. **测试套件不参与设备独占。** 运行测试套件时不会占用 `DeviceClaimMap`。
-7. **网关和 controller 的鉴权还有漏洞。** 网关白名单是按子串匹配的；controller 在没有 token 时不做任何检查，完全依赖网关。所以 controller 绝不能直接对外暴露。
-8. **Eureka 端口在 docker-compose 里对外发布了。** 建议只在内网开放。
-9. **AGPL 第 13 条（网络服务的源码提供义务）。** 部署修改版时，要在界面上向用户提供源码下载途径，例如在页脚链接到本仓库。
-10. **还没有自己的镜像。** `docker-compose.yml` 引用的仍是上游的 `sonicorg/*` 镜像，里面不包含本仓库的任何修改，中继也没有现成的镜像。上线前要用本仓库的代码构建并推送镜像，再改掉 compose 里的镜像地址。
+7. **网关和 controller 的鉴权还有漏洞。** 网关白名单是按子串匹配的；controller 在没有 token 时不做任何检查，完全依赖网关。所以 controller 绝不能直接对外暴露。按目前的接口，还没找到能绕过去的请求路径，但只要以后加一个接口，就可能被绕过。
+8. **AGPL 第 13 条（网络服务的源码提供义务）。** 部署修改版时，要在界面上向用户提供源码下载途径，例如在页脚链接到本仓库。
+9. **还没有自己的镜像。** `docker-compose.yml` 引用的仍是上游的 `sonicorg/*` 镜像，里面不包含本仓库的任何修改，中继也没有现成的镜像。上线前要用本仓库的代码构建并推送镜像，再改掉 compose 里的镜像地址。
 
 ## 修改声明 / Modification notice (AGPL-3.0 §5a)
 
