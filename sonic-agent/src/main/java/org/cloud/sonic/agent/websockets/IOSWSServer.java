@@ -286,6 +286,14 @@ public class IOSWSServer implements IIOSWSServer {
                     }
                 }
                 case "proxy" -> {
+                    // The capture proxy and its web UI listen on this machine without authentication.
+                    if (!RemoteAccessPolicy.isEnabled()) {
+                        JSONObject proxy = new JSONObject();
+                        proxy.put("msg", "proxyResult");
+                        proxy.put("isEnable", false);
+                        sendText(session, proxy.toJSONString());
+                        break;
+                    }
                     Socket portSocket = PortTool.getBindSocket();
                     Socket webPortSocket = PortTool.getBindSocket();
                     int pPort = PortTool.releaseAndGetPort(portSocket);

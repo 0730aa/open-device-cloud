@@ -769,6 +769,12 @@ const websocketOnmessage = (message) => {
       break;
     }
     case 'proxyResult': {
+      if (JSON.parse(message.data).isEnable === false) {
+        ElMessage.error({
+          message: $t('androidRemoteTS.code.noAgent'),
+        });
+        break;
+      }
       proxyWebPort.value = JSON.parse(message.data).webPort;
       proxyConnPort.value = JSON.parse(message.data).port;
       nextTick(() => {

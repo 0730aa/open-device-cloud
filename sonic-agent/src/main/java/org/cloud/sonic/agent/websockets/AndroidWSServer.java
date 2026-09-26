@@ -198,6 +198,14 @@ public class AndroidWSServer implements IAndroidWSServer {
             }
             case "clearProxy" -> AndroidDeviceBridgeTool.clearProxy(iDevice);
             case "proxy" -> {
+                // The capture proxy and its web UI listen on this machine without authentication.
+                if (!RemoteAccessPolicy.isEnabled()) {
+                    JSONObject proxy = new JSONObject();
+                    proxy.put("msg", "proxyResult");
+                    proxy.put("isEnable", false);
+                    BytesTool.sendText(session, proxy.toJSONString());
+                    break;
+                }
                 AndroidDeviceBridgeTool.clearProxy(iDevice);
                 Socket portSocket = PortTool.getBindSocket();
                 Socket webPortSocket = PortTool.getBindSocket();

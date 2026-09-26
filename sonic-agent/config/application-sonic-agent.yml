@@ -15,9 +15,9 @@ sonic:
       # who can write test cases on the server. | 脚本步骤会在本机执行任意代码，只有完全信任所有能编写用例的人时才开启
       enable: false
     remote-access:
-      # Remote ADB/SIB/WDA/UIA2 ports opened on this machine have NO authentication: anyone who can reach
-      # them controls the device. Only enable on a trusted network. | 远程ADB/SIB/WDA/UIA2端口没有任何鉴权，能访问本机的人
-      # 都能控制设备，只在可信网络中开启
+      # Remote ADB/SIB/WDA/UIA2 ports and the packet-capture proxy opened on this machine have NO authentication:
+      # anyone who can reach them controls the device or reads its traffic. Only enable on a trusted network. |
+      # 远程ADB/SIB/WDA/UIA2端口和抓包代理没有任何鉴权，能访问本机的人都能控制设备或查看其流量，只在可信网络中开启
       enable: false
   server:
     # Change to SONIC_SERVER_HOST of server | 改成server的SONIC_SERVER_HOST

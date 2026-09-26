@@ -20,9 +20,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Remote ADB (sas share), remote SIB, remote WDA and the /uia proxy open ports on this machine
- * that have no authentication: anyone who can reach them controls the device. They stay off
- * unless the agent owner opts in with sonic.agent.remote-access.enable.
+ * Remote ADB (sas share), remote SIB, remote WDA, the /uia proxy and the packet-capture proxy
+ * open ports on this machine that have no authentication: anyone who can reach them controls
+ * the device or reads its traffic. They stay off unless the agent owner opts in with
+ * sonic.agent.remote-access.enable.
  */
 @Component
 public class RemoteAccessPolicy {
