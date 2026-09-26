@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.cloud.sonic.common.config.WebAspect;
 import org.cloud.sonic.common.http.RespEnum;
 import org.cloud.sonic.common.http.RespModel;
+import org.cloud.sonic.common.tools.JWTTokenTool;
 import org.cloud.sonic.controller.models.base.CommentPage;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.http.DeviceDetailChange;
@@ -47,6 +48,8 @@ public class DevicesController {
 
     @Autowired
     private DevicesService devicesService;
+    @Autowired
+    private JWTTokenTool jwtTokenTool;
 
     @WebAspect
     @Operation(summary = "通过REST API占用设备", description = "远程占用设备并开启相关端口")
@@ -69,6 +72,18 @@ public class DevicesController {
             return new RespModel(RespEnum.UNAUTHORIZED);
         }
         return devicesService.release(udId, token);
+    }
+
+    @WebAspect
+    @Operation(summary = "获取远程控制票据", description = "为当前用户签发短时效票据，用于连接设备所在Agent；设备需空闲或正被该用户使用")
+    @Parameter(name = "id", description = "设备id")
+    @GetMapping("/remoteTicket")
+    public RespModel<JSONObject> remoteTicket(@RequestParam(name = "id") int id, HttpServletRequest request) {
+        String userName = jwtTokenTool.getUserName(request.getHeader("SonicToken"));
+        if (userName == null) {
+            return new RespModel<>(RespEnum.UNAUTHORIZED);
+        }
+        return devicesService.remoteTicket(id, userName);
     }
 
     @WebAspect

@@ -9,4 +9,8 @@ import java.util.concurrent.ScheduledFuture;
  */
 public class OccupyMap {
     public static Map<String, ScheduledFuture<?>> map = new ConcurrentHashMap<>();
+    /**
+     * Device serial -> user who occupied it, whose device claim is released with the occupation.
+     */
+    public static Map<String, String> users = new ConcurrentHashMap<>();
 }

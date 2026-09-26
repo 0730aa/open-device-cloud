@@ -87,6 +87,9 @@ public class AgentsController {
     public RespModel<?> findOne(@RequestParam(name = "id") int id) {
         Agents agents = agentsService.findById(id);
         if (agents != null) {
+            // Every remote-control page reads this. Browsers connect with remote tickets now, so
+            // neither the agent's key nor its alert webhook secrets belong in the response.
+            agents.setSecretKey(null).setRobotToken(null).setRobotSecret(null);
             return new RespModel<>(RespEnum.SEARCH_OK, agents);
         } else {
             return new RespModel<>(RespEnum.ID_NOT_FOUND);

@@ -63,7 +63,7 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendText;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/ios/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/ios/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class IOSWSServer implements IIOSWSServer {
 
     public static Map<String, Integer> screenMap = new HashMap<>();
@@ -75,25 +75,27 @@ public class IOSWSServer implements IIOSWSServer {
     private AgentManagerTool agentManagerTool;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
+            return;
+        }
+
+        // Checked before taking the lock so a rejected session leaves nothing behind.
+        if (!SibTool.getDeviceList().contains(udId)) {
+            log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
             return;
         }
 
         boolean lockSuccess = DevicesLockMap.lockByUdId(udId, 30L, TimeUnit.SECONDS);
         if (!lockSuccess) {
             log.info("Fail to get device lock... please make sure device is not busy.");
+            RemoteSessionGuard.reject(session, "device busy");
             return;
         }
         log.info("ios lock udId：{}", udId);
         IOSDeviceLocalStatus.startDebug(udId);
-
-        if (!SibTool.getDeviceList().contains(udId)) {
-            log.info("Target device is not connecting, please check the connection.");
-            return;
-        }
 
         session.getUserProperties().put("udId", udId);
         session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
@@ -103,7 +105,7 @@ public class IOSWSServer implements IIOSWSServer {
         // 更新使用用户
         JSONObject jsonDebug = new JSONObject();
         jsonDebug.put("msg", "debugUser");
-        jsonDebug.put("token", token);
+        jsonDebug.put("ticket", ticket);
         jsonDebug.put("udId", udId);
         TransportWorker.send(jsonDebug);
 
@@ -166,6 +168,9 @@ public class IOSWSServer implements IIOSWSServer {
 
     @OnClose
     public void onClose(Session session) {
+        if (!RemoteSessionGuard.release(session)) {
+            return;
+        }
         String udId = (String) session.getUserProperties().get("udId");
         try {
             exit(session);

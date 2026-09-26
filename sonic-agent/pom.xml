@@ -77,6 +77,12 @@
             <artifactId>fastjson</artifactId>
             <version>2.0.49</version>
         </dependency>
+        <!-- verifies remote tickets issued by the server -->
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>4.4.0</version>
+        </dependency>
         <!--     Sonic UIAutomation Driver   -->
         <dependency>
             <groupId>io.github.soniccloudorg</groupId>

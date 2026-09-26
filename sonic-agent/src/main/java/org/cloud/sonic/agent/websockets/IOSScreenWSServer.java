@@ -44,23 +44,21 @@ import static org.cloud.sonic.agent.tools.BytesTool.sendByte;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/ios/screen/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/ios/screen/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class IOSScreenWSServer implements IIOSWSServer {
-    @Value("${sonic.agent.key}")
-    private String key;
     @Value("${sonic.agent.port}")
     private int port;
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws InterruptedException {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws InterruptedException {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
             return;
         }
 
         if (!SibTool.getDeviceList().contains(udId)) {
             log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
             return;
         }
 
@@ -148,7 +146,9 @@ public class IOSScreenWSServer implements IIOSWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        exit(session);
+        if (RemoteSessionGuard.release(session)) {
+            exit(session);
+        }
     }
 
     @OnError

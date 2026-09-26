@@ -240,12 +240,28 @@ defineProps({
   lineMouseleave: Function,
 });
 
+/**
+ * The agent only accepts short-lived remote tickets, so fetch a new one for every connection.
+ */
+const withTicket = (callback) => {
+  axios
+    .get('/controller/devices/remoteTicket', {
+      params: { id: device.value.id },
+    })
+    .then((resp) => {
+      if (resp.code === 2000) {
+        callback(resp.data.ticket);
+      }
+    });
+};
 const tabWebView = (port, id, transTitle) => {
-  title.value = transTitle;
-  isWebView.value = false;
-  iframeUrl.value = `/chrome/devtools/inspector.html?ws=${agent.value.host}:${agent.value.port}/websockets/webView/${agent.value.secretKey}/${port}/${id}`;
-  nextTick(() => {
-    iFrameHeight.value = document.body.clientHeight - 150;
+  withTicket((ticket) => {
+    title.value = transTitle;
+    isWebView.value = false;
+    iframeUrl.value = `/chrome/devtools/inspector.html?ws=${agent.value.host}:${agent.value.port}/websockets/webView/${ticket}/${device.value.udId}/${port}/${id}`;
+    nextTick(() => {
+      iFrameHeight.value = document.body.clientHeight - 150;
+    });
   });
 };
 const saveEle = () => {
@@ -498,19 +514,15 @@ const setImgData = () => {
   };
   isShowImg.value = true;
 };
-const openSocket = (host, port, key, udId) => {
+const openSocket = (host, port, ticket, udId) => {
   if ('WebSocket' in window) {
     //
     websocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `ws://${host}:${port}/websockets/android/${ticket}/${udId}`
     );
     //
     __Scrcpy = new Scrcpy({
-      socketURL: `ws://${host}:${port}/websockets/android/screen/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`,
+      socketURL: `ws://${host}:${port}/websockets/android/screen/${ticket}/${udId}`,
       node: 'scrcpy-video',
       onmessage: screenWebsocketOnmessage,
       excuteMode: screenMode.value,
@@ -519,9 +531,7 @@ const openSocket = (host, port, key, udId) => {
     changeScreenMode(screenMode.value, 1);
     //
     terminalWebsocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/terminal/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `ws://${host}:${port}/websockets/android/terminal/${ticket}/${udId}`
     );
   } else {
     console.error($t('androidRemoteTS.noWebSocket'));
@@ -1669,12 +1679,14 @@ const getDeviceById = (id) => {
         .then((resp) => {
           if (resp.code === 2000) {
             agent.value = resp.data;
-            openSocket(
-              agent.value.host,
-              agent.value.port,
-              agent.value.secretKey,
-              device.value.udId
-            );
+            withTicket((ticket) => {
+              openSocket(
+                agent.value.host,
+                agent.value.port,
+                ticket,
+                device.value.udId
+              );
+            });
           }
         });
     }
@@ -1685,10 +1697,10 @@ const getDeviceById = (id) => {
  */
 let audioPlayer = null;
 const isConnectAudio = ref(false);
-const initAudioPlayer = () => {
+const initAudioPlayer = (ticket) => {
   audioPlayer = new AudioProcessor({
     node: 'audio-player',
-    wsUrl: `ws://${agent.value.host}:${agent.value.port}/websockets/audio/${agent.value.secretKey}/${device.value.udId}`,
+    wsUrl: `ws://${agent.value.host}:${agent.value.port}/websockets/audio/${ticket}/${device.value.udId}`,
     onReady() {
       isConnectAudio.value = true;
     },
@@ -1704,10 +1716,12 @@ const playAudio = () => {
     });
     return;
   }
-  initAudioPlayer();
-  audioPlayer.onPlay();
-  ElMessage.success({
-    message: $t('androidRemoteTS.audio'),
+  withTicket((ticket) => {
+    initAudioPlayer(ticket);
+    audioPlayer.onPlay();
+    ElMessage.success({
+      message: $t('androidRemoteTS.audio'),
+    });
   });
 };
 const destroyAudio = () => {

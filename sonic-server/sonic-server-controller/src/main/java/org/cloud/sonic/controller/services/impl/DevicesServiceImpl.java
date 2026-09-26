@@ -34,12 +34,14 @@ import org.cloud.sonic.controller.models.domain.Users;
 import org.cloud.sonic.controller.models.http.DeviceDetailChange;
 import org.cloud.sonic.controller.models.http.OccupyParams;
 import org.cloud.sonic.controller.models.http.UpdateDeviceImg;
+import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.models.interfaces.PlatformType;
 import org.cloud.sonic.controller.services.AgentsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.UsersService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
+import org.cloud.sonic.controller.tools.RemoteTicketTool;
 import org.cloud.sonic.controller.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -76,6 +78,10 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
 
     @Override
     public RespModel occupy(OccupyParams occupyParams, String token) {
+        Users users = usersService.getUserInfo(token);
+        if (users == null) {
+            return new RespModel<>(RespEnum.UNAUTHORIZED);
+        }
         Devices devices = findByUdId(occupyParams.getUdId());
         if (devices != null) {
             if (devices.getStatus().equals(DeviceStatus.ONLINE)) {
@@ -83,7 +89,8 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
                 if (agents != null) {
                     JSONObject jsonObject = (JSONObject) JSONObject.toJSON(occupyParams);
                     jsonObject.put("msg", "occupy");
-                    jsonObject.put("token", token);
+                    // Agents are run by third parties: give them a ticket for this device, never the user's login token.
+                    jsonObject.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), users.getUserName()));
                     jsonObject.put("platform", devices.getPlatform());
                     TransportWorker.send(agents.getId(), jsonObject);
                     JSONObject result = new JSONObject();
@@ -140,6 +147,27 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
     }
 
     @Override
+    public RespModel<JSONObject> remoteTicket(int id, String userName) {
+        Devices devices = findById(id);
+        if (devices == null) {
+            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        }
+        Agents agents = agentsService.findById(devices.getAgentId());
+        if (agents == null || agents.getStatus() != AgentStatus.ONLINE) {
+            return new RespModel<>(RespEnum.AGENT_NOT_ONLINE);
+        }
+        boolean free = DeviceStatus.ONLINE.equals(devices.getStatus());
+        boolean ownSession = DeviceStatus.DEBUGGING.equals(devices.getStatus()) && userName.equals(devices.getUser());
+        if (!free && !ownSession) {
+            return new RespModel<>(RespEnum.DEVICE_BUSY);
+        }
+        JSONObject result = new JSONObject();
+        result.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), userName));
+        result.put("expireIn", RemoteTicketTool.TTL_SECONDS);
+        return new RespModel<>(RespEnum.SEARCH_OK, result);
+    }
+
+    @Override
     public boolean saveDetail(DeviceDetailChange deviceDetailChange) {
         if (existsById(deviceDetailChange.getId())) {
             Devices devices = findById(deviceDetailChange.getId());
@@ -166,10 +194,18 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
 
     @Override
     public void updateDevicesUser(JSONObject jsonObject) {
-        Users users = usersService.getUserInfo(jsonObject.getString("token"));
         Devices devices = findByAgentIdAndUdId(jsonObject.getInteger("agentId"),
                 jsonObject.getString("udId"));
-        devices.setUser(users.getUserName());
+        if (devices == null) {
+            return;
+        }
+        String userName = RemoteTicketTool.verify(agentsService.findById(devices.getAgentId()),
+                devices.getUdId(), jsonObject.getString("ticket"));
+        if (userName == null) {
+            log.warn("Agent {} reported a user of {} without a valid ticket, ignored.", devices.getAgentId(), devices.getUdId());
+            return;
+        }
+        devices.setUser(userName);
         save(devices);
     }
 
