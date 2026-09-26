@@ -30,6 +30,7 @@ import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
 import org.cloud.sonic.controller.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +47,8 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
     private AlertRobotsServiceImpl alertRobotsService;
     @Autowired
     private AgentsMapper agentsMapper;
+    @Value("${sonic.permission.superAdmin}")
+    private String superAdmin;
 
     @Override
     public List<Agents> findAgents() {
@@ -53,7 +56,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
     }
 
     @Override
-    public void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds) {
+    public void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds, String ownerName) {
         if (id == 0) {
             Agents agents = new Agents();
             agents.setName(name);
@@ -70,6 +73,7 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
             agents.setSecretKey(UUID.randomUUID().toString());
             agents.setHasHub(0);
             agents.setRemoteAccess(0);
+            agents.setOwnerName(ownerName == null ? "" : ownerName);
             agents.setAlertRobotIds(alertRobotIds);
             save(agents);
         } else {
@@ -150,6 +154,15 @@ public class AgentsServiceImpl extends SonicServiceImpl<AgentsMapper, Agents> im
         } else {
             return false;
         }
+    }
+
+    @Override
+    public boolean canManage(Agents agents, String userName) {
+        if (agents == null || userName == null) {
+            return false;
+        }
+        return userName.equals(superAdmin)
+                || (!ObjectUtils.isEmpty(agents.getOwnerName()) && agents.getOwnerName().equals(userName));
     }
 
     @Override

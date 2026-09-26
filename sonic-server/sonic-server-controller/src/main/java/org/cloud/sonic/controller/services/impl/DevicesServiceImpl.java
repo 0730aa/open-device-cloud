@@ -54,6 +54,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.OptionalDouble;
 
 import static org.cloud.sonic.common.http.RespEnum.DELETE_OK;
@@ -377,6 +378,11 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             devices.setVoltage(0);
             devices.setLevel(0);
             devices.setIsHm(0);
+        } else if (!Objects.equals(devices.getAgentId(), jsonMsg.getInteger("agentId"))
+                && !canMoveBetween(devices.getAgentId(), jsonMsg.getInteger("agentId"))) {
+            log.warn("Agent {} reported device {} that belongs to another owner's agent {}, ignored.",
+                    jsonMsg.getInteger("agentId"), devices.getUdId(), devices.getAgentId());
+            return;
         }
         devices.setAgentId(jsonMsg.getInteger("agentId"));
         if (jsonMsg.getString("name") != null) {
@@ -412,6 +418,17 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             devices.setStatus(jsonMsg.getString("status"));
         }
         save(devices);
+    }
+
+    /**
+     * Devices are keyed by serial number alone, so a report from another agent takes the record
+     * over. That is fine when an owner re-plugs a phone into another of their agents, but across
+     * owners it is a spoof or a serial collision and must not steal someone else's device.
+     */
+    private boolean canMoveBetween(int fromAgentId, int toAgentId) {
+        Agents from = agentsService.findById(fromAgentId);
+        Agents to = agentsService.findById(toAgentId);
+        return from == null || (to != null && Objects.equals(from.getOwnerName(), to.getOwnerName()));
     }
 
     @Override

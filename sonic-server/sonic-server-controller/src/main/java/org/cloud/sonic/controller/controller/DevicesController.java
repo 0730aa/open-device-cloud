@@ -33,6 +33,7 @@ import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.http.DeviceDetailChange;
 import org.cloud.sonic.controller.models.http.OccupyParams;
 import org.cloud.sonic.controller.models.http.UpdateDeviceImg;
+import org.cloud.sonic.controller.services.AgentsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +51,8 @@ public class DevicesController {
     private DevicesService devicesService;
     @Autowired
     private JWTTokenTool jwtTokenTool;
+    @Autowired
+    private AgentsService agentsService;
 
     @WebAspect
     @Operation(summary = "通过REST API占用设备", description = "远程占用设备并开启相关端口")
@@ -90,9 +93,14 @@ public class DevicesController {
     @Operation(summary = "强制解除设备占用", description = "强制解除设备占用")
     @Parameter(name = "udId", description = "设备序列号")
     @GetMapping("/stopDebug")
-    public RespModel<List<Devices>> stopDebug(@RequestParam(name = "udId") String udId) {
+    public RespModel<List<Devices>> stopDebug(@RequestParam(name = "udId") String udId, HttpServletRequest request) {
         Devices devices = devicesService.findByUdId(udId);
         if (devices != null) {
+            // Ends whoever's session is on the device: its current user may, and so may the device's owner.
+            String userName = jwtTokenTool.getUserName(request.getHeader("SonicToken"));
+            if (!(userName != null && userName.equals(devices.getUser())) && !canManage(devices, request)) {
+                return new RespModel<>(RespEnum.PERMISSION_DENIED);
+            }
             JSONObject jsonObject = new JSONObject();
             jsonObject.put("msg", "stopDebug");
             jsonObject.put("udId", udId);
@@ -115,7 +123,11 @@ public class DevicesController {
     @WebAspect(sensitive = true)
     @Operation(summary = "修改设备安装密码", description = "修改对应设备id的安装密码")
     @PutMapping("/saveDetail")
-    public RespModel<String> saveDetail(@Validated @RequestBody DeviceDetailChange deviceDetailChange) {
+    public RespModel<String> saveDetail(@Validated @RequestBody DeviceDetailChange deviceDetailChange, HttpServletRequest request) {
+        Devices devices = devicesService.findById(deviceDetailChange.getId());
+        if (devices != null && !canManage(devices, request)) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         if (devicesService.saveDetail(deviceDetailChange)) {
             return new RespModel<>(RespEnum.UPDATE_OK);
         } else {
@@ -130,7 +142,15 @@ public class DevicesController {
             @Parameter(name = "position", description = "position")
     })
     @GetMapping("/updatePosition")
-    public RespModel updatePosition(@RequestParam(name = "id") int id, @RequestParam(name = "position") int position) {
+    public RespModel updatePosition(@RequestParam(name = "id") int id, @RequestParam(name = "position") int position,
+                                    HttpServletRequest request) {
+        Devices devices = devicesService.findById(id);
+        if (devices == null) {
+            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        }
+        if (!canManage(devices, request)) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         devicesService.updatePosition(id, position);
         return new RespModel<>(RespEnum.HANDLE_OK);
     }
@@ -138,7 +158,11 @@ public class DevicesController {
     @WebAspect
     @Operation(summary = "修改设备图片", description = "修改对应设备id的图片")
     @PutMapping("/updateImg")
-    public RespModel<String> updateImg(@Validated @RequestBody UpdateDeviceImg updateDeviceImg) {
+    public RespModel<String> updateImg(@Validated @RequestBody UpdateDeviceImg updateDeviceImg, HttpServletRequest request) {
+        Devices devices = devicesService.findById(updateDeviceImg.getId());
+        if (devices != null && !canManage(devices, request)) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         devicesService.updateImg(updateDeviceImg);
         return new RespModel<>(RespEnum.UPDATE_OK);
     }
@@ -240,7 +264,19 @@ public class DevicesController {
     @WebAspect
     @Operation(summary = "删除设备", description = "设备必须离线才能删除，会删除设备与套件绑定关系")
     @DeleteMapping()
-    public RespModel<String> delete(@RequestParam(name = "id") int id) {
+    public RespModel<String> delete(@RequestParam(name = "id") int id, HttpServletRequest request) {
+        Devices devices = devicesService.findById(id);
+        if (devices != null && !canManage(devices, request)) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         return devicesService.delete(id);
+    }
+
+    /**
+     * Device settings belong to whoever owns the agent the device is plugged into.
+     */
+    private boolean canManage(Devices devices, HttpServletRequest request) {
+        return agentsService.canManage(agentsService.findById(devices.getAgentId()),
+                jwtTokenTool.getUserName(request.getHeader("SonicToken")));
     }
 }

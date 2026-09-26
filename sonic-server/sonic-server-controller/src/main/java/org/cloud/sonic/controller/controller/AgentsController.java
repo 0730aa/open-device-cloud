@@ -20,10 +20,11 @@ package org.cloud.sonic.controller.controller;
 import com.alibaba.fastjson.JSONObject;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import org.cloud.sonic.common.config.WebAspect;
 import org.cloud.sonic.common.http.RespEnum;
 import org.cloud.sonic.common.http.RespModel;
-import org.cloud.sonic.controller.models.base.TypeConverter;
+import org.cloud.sonic.common.tools.JWTTokenTool;
 import org.cloud.sonic.controller.models.domain.Agents;
 import org.cloud.sonic.controller.models.dto.AgentsDTO;
 import org.cloud.sonic.controller.services.AgentsService;
@@ -46,11 +47,16 @@ public class AgentsController {
 
     @Autowired
     private AgentsService agentsService;
+    @Autowired
+    private JWTTokenTool jwtTokenTool;
 
     @WebAspect
     @GetMapping("/hubControl")
     public RespModel<?> hubControl(@RequestParam(name = "id") int id, @RequestParam(name = "position") int position,
-                                   @RequestParam(name = "type") String type) {
+                                   @RequestParam(name = "type") String type, HttpServletRequest request) {
+        if (!agentsService.canManage(agentsService.findById(id), currentUser(request))) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         JSONObject result = new JSONObject();
         result.put("msg", "hub");
         result.put("position", position);
@@ -62,22 +68,35 @@ public class AgentsController {
     @WebAspect(sensitive = true)
     @Operation(summary = "查询所有Agent端", description = "获取所有Agent端以及详细信息")
     @GetMapping("/list")
-    public RespModel<List<AgentsDTO>> findAgents() {
+    public RespModel<List<AgentsDTO>> findAgents(HttpServletRequest request) {
+        String userName = currentUser(request);
         return new RespModel<>(
                 RespEnum.SEARCH_OK,
-                agentsService.findAgents().stream().map(TypeConverter::convertTo).collect(Collectors.toList())
+                agentsService.findAgents().stream().map(agents -> {
+                    AgentsDTO agentsDTO = agents.convertTo();
+                    // Only whoever runs an agent needs its key, so other users do not get it or its webhook secrets.
+                    if (!agentsService.canManage(agents, userName)) {
+                        agentsDTO.setSecretKey(null).setRobotToken(null).setRobotSecret(null);
+                    }
+                    return agentsDTO;
+                }).collect(Collectors.toList())
         );
     }
 
     @WebAspect(sensitive = true)
     @Operation(summary = "修改agent信息", description = "修改agent信息")
     @PutMapping("/update")
-    public RespModel<String> update(@RequestBody AgentsDTO jsonObject) {
+    public RespModel<String> update(@RequestBody AgentsDTO jsonObject, HttpServletRequest request) {
+        String userName = currentUser(request);
+        // Anyone may register an agent and becomes its owner; only the owner may change it afterwards.
+        if (jsonObject.getId() != 0 && !agentsService.canManage(agentsService.findById(jsonObject.getId()), userName)) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         agentsService.update(jsonObject.getId(),
                 jsonObject.getName(), jsonObject.getHighTemp(),
                 jsonObject.getHighTempTime(), jsonObject.getRobotType(),
                 jsonObject.getRobotToken(), jsonObject.getRobotToken(),
-                jsonObject.getAlertRobotIds());
+                jsonObject.getAlertRobotIds(), userName);
         return new RespModel<>(RespEnum.HANDLE_OK);
     }
 
@@ -94,5 +113,9 @@ public class AgentsController {
         } else {
             return new RespModel<>(RespEnum.ID_NOT_FOUND);
         }
+    }
+
+    private String currentUser(HttpServletRequest request) {
+        return jwtTokenTool.getUserName(request.getHeader("SonicToken"));
     }
 }

@@ -59,15 +59,18 @@ public class ExchangeController {
     @WebAspect
     @Operation(summary = "重启设备", description = "根据 id 重启特定设备")
     @GetMapping("/reboot")
-    public RespModel<String> reboot(@RequestParam(name = "id") int id) {
+    public RespModel<String> reboot(@RequestParam(name = "id") int id, HttpServletRequest request) {
 
         Devices devices = devicesService.findById(id);
+        if (ObjectUtils.isEmpty(devices)) {
+            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        }
         Agents agents = agentsService.findById(devices.getAgentId());
         if (ObjectUtils.isEmpty(agents)) {
             return new RespModel<>(RespEnum.AGENT_NOT_ONLINE);
         }
-        if (ObjectUtils.isEmpty(devices)) {
-            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        if (!agentsService.canManage(agents, jwtTokenTool.getUserName(request.getHeader("SonicToken")))) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
         }
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("msg", "reboot");
@@ -80,8 +83,11 @@ public class ExchangeController {
     @WebAspect
     @Operation(summary = "下线agent", description = "下线指定的 agent")
     @GetMapping("/stop")
-    public RespModel<String> stop(@RequestParam(name = "id") int id) {
+    public RespModel<String> stop(@RequestParam(name = "id") int id, HttpServletRequest request) {
         Agents agents = agentsService.findById(id);
+        if (!agentsService.canManage(agents, jwtTokenTool.getUserName(request.getHeader("SonicToken")))) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         if (agents.getStatus() != AgentStatus.ONLINE) {
             return new RespModel<>(2000, "stop.agent.not.online");
         }
