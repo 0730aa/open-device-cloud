@@ -24,16 +24,32 @@ function Assert-That([bool]$Condition, [string]$What) {
     Write-Host "ok: $What"
 }
 
+# Reads a file that running programs still have open for writing.
+function Read-SharedFile([string]$Path, [Text.Encoding]$Encoding) {
+    if (-not (Test-Path $Path)) {
+        return ''
+    }
+    $stream = New-Object IO.FileStream($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $reader = New-Object IO.StreamReader($stream, $Encoding)
+    try {
+        return $reader.ReadToEnd()
+    } finally {
+        $reader.Close()
+    }
+}
+
 # Runs one of the bundle's .bat files; the input from NUL answers its closing pause. The output goes
-# to a file, not a pipe: the server's programs inherit the handle and keep running, so a pipe would
-# never reach its end.
+# to a file of its own, not a pipe: the server's programs inherit the handle and keep running, so a
+# pipe would never reach its end, and the file stays open.
+$script:BatRuns = 0
 function Invoke-Bat([string]$Name) {
-    $log = Join-Path $env:RUNNER_TEMP "$Name.log"
+    $script:BatRuns++
+    $log = Join-Path $env:RUNNER_TEMP "$($script:BatRuns)-$Name.log"
     $start = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/c `"`"$Bundle\$Name`" > `"$log`" 2>&1 < NUL`""
     $start.UseShellExecute = $false
     $process = [Diagnostics.Process]::Start($start)
     $process.WaitForExit()
-    [IO.File]::ReadAllLines($log, [Console]::OutputEncoding) | ForEach-Object { Write-Host "  | $_" }
+    (Read-SharedFile $log ([Console]::OutputEncoding)) -split "`r?`n" | ForEach-Object { Write-Host "  | $_" }
     return $process.ExitCode
 }
 
@@ -72,7 +88,8 @@ function Wait-For([int]$Seconds, [scriptblock]$Condition) {
 
 # The agent logs this each time it connects; the server's record of it may be stale after a hard stop.
 function Get-AgentLogins {
-    return @(Select-String -Path "$Bundle\agent\logs\sonic-agent.log" -Pattern 'server auth successful' -SimpleMatch -ErrorAction SilentlyContinue).Count
+    $log = Read-SharedFile "$Bundle\agent\logs\sonic-agent.log" ([Text.Encoding]::UTF8)
+    return ([regex]::Matches($log, 'server auth successful')).Count
 }
 
 function Stop-Tree([int]$Id) {

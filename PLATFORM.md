@@ -146,6 +146,7 @@ NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" 
 
 - **上游测试没有在跑**：上游原有的 JUnit 4 测试因为项目缺少 vintage 引擎，实际上一个都没有执行。本仓库新增的 server 测试用的是 JUnit 5。
 - **agent 的依赖从哪里下载**：pom 里配的是阿里云镜像，而 ddmlib 31.0.1 只发布在 Google Maven（`dl.google.com`）。CI（`.github/workflows/ci.yml`）改为直接从 Google Maven 和 Maven Central 下载，用真实的 ddmlib 编译并运行 agent 的全部测试；每个 PR 都会跑 server、agent、client-web 三项检查。本地下载失败时，可以照搬 CI 里的 `settings.xml` 镜像配置。
+- **设备端到端测试**：推送的改动涉及 server、agent 或 `e2e/` 时，`.github/workflows/device-e2e.yml` 会启动 server 和 Linux 版 agent，并接上一台 Android 模拟器，然后按网页的方式远控它（`e2e/android_remote.py`）。检查的内容有：设备出现在设备中心；没有有效票据的连接被 agent 拒绝；用票据打开控制和画面连接后，画面持续推流；使用期间设备记为该用户使用中，其他用户拿不到票据；断开后设备恢复空闲。
 
 ## 在一台 Windows 电脑上试用
 
