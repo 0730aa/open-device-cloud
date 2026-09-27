@@ -147,6 +147,16 @@ NODE_OPTIONS="--no-experimental-require-module --no-experimental-detect-module" 
 - **上游测试没有在跑**：上游原有的 JUnit 4 测试因为项目缺少 vintage 引擎，实际上一个都没有执行。本仓库新增的 server 测试用的是 JUnit 5。
 - **agent 的依赖从哪里下载**：pom 里配的是阿里云镜像，而 ddmlib 31.0.1 只发布在 Google Maven（`dl.google.com`）。CI（`.github/workflows/ci.yml`）改为直接从 Google Maven 和 Maven Central 下载，用真实的 ddmlib 编译并运行 agent 的全部测试；每个 PR 都会跑 server、agent、client-web 三项检查。本地下载失败时，可以照搬 CI 里的 `settings.xml` 镜像配置。
 
+## 在一台 Windows 电脑上试用
+
+`.github/workflows/windows-bundle.yml` 把服务端、agent、nginx 加网页前端、Java 17 运行时和启动脚本打成一个压缩包 `open-device-cloud-windows`，不需要 Docker，只需要另外装 MySQL。用法见包里的 `README.txt`（源文件在 `packaging/windows/bundle/`）。修改 `packaging/windows/` 的 PR 会自动打包；要打包当前代码，可以在 Actions 页面手动运行这个 workflow。压缩包在运行结果页面保留 3 天。
+
+- **打包后会先实际用一遍。** 同一个 workflow 在 Windows 机器上按 README 的步骤操作：用 `start-server.bat` 启动，注册 `sonic`，新建 agent，带着 key 启动 `start-agent.bat`，等它上线，然后重启服务端，确认 agent 能重连，最后停止。唯一没有覆盖的是真手机。
+- **服务端各组件共用依赖。** 四个组件的 Spring Boot jar 大部分依赖相同，打包时把 jar 解开，依赖只保留一份（261 MB 减到 94 MB）。每个组件按它自己 jar 里 `classpath.idx` 的顺序启动：`java @apps/<组件>/java.args`。
+- **只在本机可访问。** 所有端口只监听 127.0.0.1：网页 3000（nginx），网关 8094，注册中心 8761；controller 和 folder 用随机端口。
+- **密钥在第一次启动时生成。** `SECRET_KEY` 和注册中心密码首次启动时随机生成，和 MySQL 密码一起保存在 `server\settings.json`。数据库由 `DbCheck` 显式按 utf8mb4 创建：MySQL 5.7 和 MariaDB 的默认字符集是 latin1，存不了中文，controller 会在初始化数据时失败（在 MariaDB 上实际遇到过）。
+- **第三方程序固定版本。** nginx 1.28.0；adb r34.0.3；sas 0.1.12、sib 1.3.20、sgm 1.3.4，与 agent 检查的版本一致；Java 取 Temurin 17 的最新更新，并用 Adoptium 公布的校验和核对。
+
 ## 开放给外部机主之前还要解决的问题
 
 非对称签名的票据、中继网关和注册中心的鉴权已经完成（见"第 1 阶段"一节），剩下这些：

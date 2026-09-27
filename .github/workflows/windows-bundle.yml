@@ -1,0 +1,101 @@
+name: Windows bundle
+
+# A zip for trying the platform out on one Windows PC: the server, the agent, nginx with the web client
+# and a Java runtime, with scripts to start them (packaging/windows/bundle/README.txt). It is built,
+# then used on a Windows machine the way its README says, and kept for 3 days on the run's page.
+# Runs when the packaging changes, and from the Actions tab for a bundle of the current code.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packaging/windows/**'
+      - '.github/workflows/windows-bundle.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: sonic-client-web/package-lock.json
+      # The agent's pom points at Aliyun mirrors; fetch from Google Maven (ddmlib) and Maven Central directly.
+      - name: Resolve dependencies from the original repositories
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'SETTINGS'
+          <settings>
+            <mirrors>
+              <mirror><id>google-direct</id><mirrorOf>google</mirrorOf><url>https://maven.google.com</url></mirror>
+              <mirror><id>central-direct</id><mirrorOf>alimaven</mirrorOf><url>https://repo.maven.apache.org/maven2</url></mirror>
+            </mirrors>
+          </settings>
+          SETTINGS
+      # Tests run in CI; this workflow only packages.
+      - name: Build the server
+        run: mvn -B -f sonic-server/pom.xml -Dmaven.test.skip=true package
+      - name: Build the agent for Windows
+        run: mvn -B -f sonic-agent/pom.xml -Dmaven.test.skip=true -Dplatform=windows-x86_64 package
+      # "prepare" runs husky install, which fails outside the repository root.
+      - name: Build the web client
+        working-directory: sonic-client-web
+        run: npm ci --ignore-scripts && npm rebuild esbuild && npm run build
+      - name: Compile the database check
+        run: javac --release 17 -d build/db-check packaging/windows/DbCheck.java
+      - name: Download the Windows programs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash packaging/windows/download-tools.sh build/tools
+      - name: Assemble
+        run: python3 packaging/windows/assemble.py --tools build/tools --db-check build/db-check --out build/open-device-cloud-windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-device-cloud-windows
+          path: build/open-device-cloud-windows
+          if-no-files-found: error
+          retention-days: 3
+
+  smoke-test:
+    needs: bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-mysql@083ec148d28e62f2b24b8f4541693dfe1d50488d # v1.54.0
+        with:
+          mysql-version: '8.4'
+          root-password: smoke-test-root
+      - uses: actions/download-artifact@v4
+        with:
+          name: open-device-cloud-windows
+          path: C:\odc
+      # Windows PowerShell 5.1, which is what the bundle's scripts get on a person's PC.
+      - name: Use the bundle the way its README says
+        shell: powershell
+        env:
+          SMOKE_MYSQL_PASSWORD: smoke-test-root
+        run: packaging\windows\smoke-test.ps1 -Bundle C:\odc
+      - name: Keep the logs of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-logs
+          path: |
+            C:\odc\server\logs
+            C:\odc\server\nginx\logs
+            C:\odc\agent\logs
+            C:\odc\agent-console*.log
+          retention-days: 3

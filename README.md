@@ -11,6 +11,7 @@
 | `sonic-server/` | 平台服务端：网关、controller、文件服务、注册中心（Spring Cloud），以及让家用宽带后面的 agent 也能接入的中继 |
 | `sonic-agent/` | 装在机主电脑上的 agent，通过 USB 连接手机，负责画面和操作的转发 |
 | `sonic-client-web/` | 租户和机主使用的网页前端（Vue 3） |
+| `packaging/windows/` | Windows 本机试用包：服务端和 agent 在同一台电脑上运行，不需要 Docker |
 
 ## 进度
 
@@ -21,6 +22,8 @@
 ## 构建与测试
 
 命令见 PLATFORM.md 的"构建与测试"一节。每个 PR 都会由 CI 编译并测试 server、agent 和 client-web。
+
+想在一台 Windows 电脑上直接试用，见 PLATFORM.md 的"在一台 Windows 电脑上试用"一节。
 
 ## 许可证
 
