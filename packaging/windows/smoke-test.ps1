@@ -24,11 +24,23 @@ function Assert-That([bool]$Condition, [string]$What) {
     Write-Host "ok: $What"
 }
 
-# Runs one of the bundle's .bat files; the input from NUL answers its closing pause.
+# Runs one of the bundle's .bat files; the input from NUL answers its closing pause. The output goes
+# to a file, not a pipe: the server's programs inherit the handle and keep running, so a pipe would
+# never reach its end.
 function Invoke-Bat([string]$Name) {
-    $ErrorActionPreference = 'Continue'
-    cmd /c "`"$Bundle\$Name`" < NUL" 2>&1 | ForEach-Object { Write-Host "  | $_" }
-    return $LASTEXITCODE
+    $log = Join-Path $env:RUNNER_TEMP "$Name.log"
+    $start = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/c `"`"$Bundle\$Name`" > `"$log`" 2>&1 < NUL`""
+    $start.UseShellExecute = $false
+    $process = [Diagnostics.Process]::Start($start)
+    $process.WaitForExit()
+    [IO.File]::ReadAllLines($log, [Console]::OutputEncoding) | ForEach-Object { Write-Host "  | $_" }
+    return $process.ExitCode
+}
+
+# Everything the bundle started: its Java, nginx and adb.
+function Stop-Bundle {
+    Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Bundle, 'OrdinalIgnoreCase') } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
 function Invoke-Api([string]$Method, [string]$Path, $Body = $null, [string]$Token = '') {
@@ -151,4 +163,5 @@ try {
     if ($agentConsole) {
         Stop-Tree $agentConsole.Id
     }
+    Stop-Bundle
 }
