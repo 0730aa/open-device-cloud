@@ -12,8 +12,9 @@ services:
       - ./logs/:/logs/
     networks:
       - sonic-network
-    ports:
-      - "${SONIC_EUREKA_PORT}:${SONIC_EUREKA_PORT}"
+    # No published port: only the server components on sonic-network use the registry, and whoever can
+    # register there can redirect their traffic. | 不对外发布端口：只有sonic-network内的服务端组件使用注册中心，
+    # 能在上面注册服务的人就能劫持它们的流量
   sonic-server-gateway:
     image: "sonicorg/sonic-server-gateway:SONIC_VERSION"
     hostname: sonic-server-gateway
@@ -48,6 +49,8 @@ services:
       - SECRET_KEY
       - EXPIRE_DAY
       - REGISTER_ENABLE
+      - TICKET_PRIVATE_KEY
+      - TICKET_PUBLIC_KEY
       - NORMAL_USER_ENABLE
       - LDAP_USER_ENABLE
       - LDAP_USER_ID

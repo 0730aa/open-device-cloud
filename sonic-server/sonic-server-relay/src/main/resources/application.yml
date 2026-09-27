@@ -1,0 +1,33 @@
+spring:
+  main:
+    web-application-type: reactive
+  version: @project.version@
+  application:
+    name: @project.artifactId@
+    des: "Relay of Sonic Cloud Real Machine Platform"
+
+server:
+  port: ${RELAY_PORT:8095}
+
+sonic:
+  relay:
+    # Public key of the platform's ticket key pair (base64 X.509): the same TICKET_PUBLIC_KEY as sonic-server-controller,
+    # which must then be given TICKET_PRIVATE_KEY too. | 平台票据密钥对的公钥（base64 X.509），与sonic-server-controller的
+    # TICKET_PUBLIC_KEY相同；此时controller也必须配置TICKET_PRIVATE_KEY
+    ticket-public-key: ${TICKET_PUBLIC_KEY:}
+    # How long a browser waits for its agent to connect back | 浏览器等待agent回连的时间
+    open-timeout: 10s
+    # Browser connections one agent may carry at a time | 每个agent同时承载的浏览器连接数上限
+    max-connections-per-agent: 64
+    # Largest message relayed, e.g. one screen frame | 单条消息（如一帧画面）的大小上限
+    max-frame-bytes: 16777216
+    # How often browsers are pinged, so proxies in front of the relay keep quiet connections open |
+    # 向浏览器发送ping的间隔，防止中继前面的代理断开暂时没有数据的连接
+    ping-interval: 30s
+
+logging:
+  file:
+    name: logs/${spring.application.name}.log
+  logback:
+    rollingpolicy:
+      max-history: 3

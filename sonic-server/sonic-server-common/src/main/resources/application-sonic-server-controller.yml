@@ -1,6 +1,14 @@
 server:
   port: 0
 
+sonic:
+  ticket:
+    # EC P-256 key pair that signs remote tickets (base64 PKCS#8 / X.509). Optional with a single controller:
+    # generated on first use and kept in the database. With several controllers, set the same pair on all.
+    # 签发远控票据的EC P-256密钥对。单个controller时可不填（首次使用时生成并存入数据库）；多个controller时都要设置同一对
+    private-key: ${TICKET_PRIVATE_KEY:}
+    public-key: ${TICKET_PUBLIC_KEY:}
+
 springdoc:
   paths-to-exclude: /exchange/send,/agents/hubControl
 

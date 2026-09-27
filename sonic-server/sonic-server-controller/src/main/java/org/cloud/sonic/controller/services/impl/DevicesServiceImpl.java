@@ -81,6 +81,8 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
     private AgentsService agentsService;
     @Autowired
     private DeviceSessionsService deviceSessionsService;
+    @Autowired
+    private RemoteTicketTool remoteTicketTool;
 
     @Override
     public RespModel occupy(OccupyParams occupyParams, String token) {
@@ -99,7 +101,7 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
                     JSONObject jsonObject = (JSONObject) JSONObject.toJSON(occupyParams);
                     jsonObject.put("msg", "occupy");
                     // Agents are run by third parties: give them a ticket for this device, never the user's login token.
-                    jsonObject.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), users.getUserName()));
+                    jsonObject.put("ticket", remoteTicketTool.issue(agents, devices.getUdId(), users.getUserName()));
                     jsonObject.put("platform", devices.getPlatform());
                     TransportWorker.send(agents.getId(), jsonObject);
                     JSONObject result = new JSONObject();
@@ -177,7 +179,7 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             return new RespModel<>(RespEnum.DEVICE_BUSY);
         }
         JSONObject result = new JSONObject();
-        result.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), userName));
+        result.put("ticket", remoteTicketTool.issue(agents, devices.getUdId(), userName));
         result.put("expireIn", RemoteTicketTool.TTL_SECONDS);
         return new RespModel<>(RespEnum.SEARCH_OK, result);
     }
@@ -215,9 +217,14 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             return;
         }
         Agents agents = agentsService.findById(devices.getAgentId());
-        DecodedJWT ticket = RemoteTicketTool.decode(agents, devices.getUdId(), jsonObject.getString("ticket"));
+        DecodedJWT ticket = remoteTicketTool.decode(agents, devices.getUdId(), jsonObject.getString("ticket"));
         if (ticket == null) {
             log.warn("Agent {} reported a user of {} without a valid ticket, ignored.", devices.getAgentId(), devices.getUdId());
+            return;
+        }
+        if (!remoteTicketTool.markUsedForSession(ticket)) {
+            log.warn("Agent {} reused ticket {} on {} to start another session, ignored.",
+                    devices.getAgentId(), ticket.getId(), devices.getUdId());
             return;
         }
         devices.setUser(ticket.getSubject());
