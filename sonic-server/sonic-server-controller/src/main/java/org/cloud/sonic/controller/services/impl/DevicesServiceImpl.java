@@ -19,6 +19,7 @@ package org.cloud.sonic.controller.services.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.conditions.query.LambdaQueryChainWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -28,18 +29,22 @@ import org.cloud.sonic.common.http.RespModel;
 import org.cloud.sonic.controller.mapper.DevicesMapper;
 import org.cloud.sonic.controller.mapper.TestSuitesDevicesMapper;
 import org.cloud.sonic.controller.models.domain.Agents;
+import org.cloud.sonic.controller.models.domain.DeviceSessions;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.domain.TestSuitesDevices;
 import org.cloud.sonic.controller.models.domain.Users;
 import org.cloud.sonic.controller.models.http.DeviceDetailChange;
 import org.cloud.sonic.controller.models.http.OccupyParams;
 import org.cloud.sonic.controller.models.http.UpdateDeviceImg;
+import org.cloud.sonic.controller.models.interfaces.AgentStatus;
 import org.cloud.sonic.controller.models.interfaces.DeviceStatus;
 import org.cloud.sonic.controller.models.interfaces.PlatformType;
 import org.cloud.sonic.controller.services.AgentsService;
+import org.cloud.sonic.controller.services.DeviceSessionsService;
 import org.cloud.sonic.controller.services.DevicesService;
 import org.cloud.sonic.controller.services.UsersService;
 import org.cloud.sonic.controller.services.impl.base.SonicServiceImpl;
+import org.cloud.sonic.controller.tools.RemoteTicketTool;
 import org.cloud.sonic.controller.transport.TransportWorker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -52,6 +57,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.OptionalDouble;
 
 import static org.cloud.sonic.common.http.RespEnum.DELETE_OK;
@@ -73,17 +79,27 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
     private TestSuitesDevicesMapper testSuitesDevicesMapper;
     @Autowired
     private AgentsService agentsService;
+    @Autowired
+    private DeviceSessionsService deviceSessionsService;
 
     @Override
     public RespModel occupy(OccupyParams occupyParams, String token) {
+        Users users = usersService.getUserInfo(token);
+        if (users == null) {
+            return new RespModel<>(RespEnum.UNAUTHORIZED);
+        }
         Devices devices = findByUdId(occupyParams.getUdId());
         if (devices != null) {
             if (devices.getStatus().equals(DeviceStatus.ONLINE)) {
                 Agents agents = agentsService.findById(devices.getAgentId());
                 if (agents != null) {
+                    if (requestsRemotePorts(occupyParams) && !Integer.valueOf(1).equals(agents.getRemoteAccess())) {
+                        return new RespModel<>(RespEnum.REMOTE_ACCESS_DISABLED);
+                    }
                     JSONObject jsonObject = (JSONObject) JSONObject.toJSON(occupyParams);
                     jsonObject.put("msg", "occupy");
-                    jsonObject.put("token", token);
+                    // Agents are run by third parties: give them a ticket for this device, never the user's login token.
+                    jsonObject.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), users.getUserName()));
                     jsonObject.put("platform", devices.getPlatform());
                     TransportWorker.send(agents.getId(), jsonObject);
                     JSONObject result = new JSONObject();
@@ -120,6 +136,12 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         }
     }
 
+    private static boolean requestsRemotePorts(OccupyParams occupyParams) {
+        return occupyParams.getSasRemotePort() != 0 || occupyParams.getUia2RemotePort() != 0
+                || occupyParams.getSibRemotePort() != 0 || occupyParams.getWdaServerRemotePort() != 0
+                || occupyParams.getWdaMjpegRemotePort() != 0;
+    }
+
     @Override
     public RespModel release(String udId, String token) {
         Users users = usersService.getUserInfo(token);
@@ -137,6 +159,27 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         } else {
             return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
         }
+    }
+
+    @Override
+    public RespModel<JSONObject> remoteTicket(int id, String userName) {
+        Devices devices = findById(id);
+        if (devices == null) {
+            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        }
+        Agents agents = agentsService.findById(devices.getAgentId());
+        if (agents == null || agents.getStatus() != AgentStatus.ONLINE) {
+            return new RespModel<>(RespEnum.AGENT_NOT_ONLINE);
+        }
+        boolean free = DeviceStatus.ONLINE.equals(devices.getStatus());
+        boolean ownSession = DeviceStatus.DEBUGGING.equals(devices.getStatus()) && userName.equals(devices.getUser());
+        if (!free && !ownSession) {
+            return new RespModel<>(RespEnum.DEVICE_BUSY);
+        }
+        JSONObject result = new JSONObject();
+        result.put("ticket", RemoteTicketTool.issue(agents, devices.getUdId(), userName));
+        result.put("expireIn", RemoteTicketTool.TTL_SECONDS);
+        return new RespModel<>(RespEnum.SEARCH_OK, result);
     }
 
     @Override
@@ -166,11 +209,20 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
 
     @Override
     public void updateDevicesUser(JSONObject jsonObject) {
-        Users users = usersService.getUserInfo(jsonObject.getString("token"));
         Devices devices = findByAgentIdAndUdId(jsonObject.getInteger("agentId"),
                 jsonObject.getString("udId"));
-        devices.setUser(users.getUserName());
+        if (devices == null) {
+            return;
+        }
+        Agents agents = agentsService.findById(devices.getAgentId());
+        DecodedJWT ticket = RemoteTicketTool.decode(agents, devices.getUdId(), jsonObject.getString("ticket"));
+        if (ticket == null) {
+            log.warn("Agent {} reported a user of {} without a valid ticket, ignored.", devices.getAgentId(), devices.getUdId());
+            return;
+        }
+        devices.setUser(ticket.getSubject());
         save(devices);
+        deviceSessionsService.start(devices, agents, ticket.getSubject(), ticket.getId());
     }
 
     @Override
@@ -332,6 +384,11 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
             devices.setVoltage(0);
             devices.setLevel(0);
             devices.setIsHm(0);
+        } else if (!Objects.equals(devices.getAgentId(), jsonMsg.getInteger("agentId"))
+                && !canMoveBetween(devices.getAgentId(), jsonMsg.getInteger("agentId"))) {
+            log.warn("Agent {} reported device {} that belongs to another owner's agent {}, ignored.",
+                    jsonMsg.getInteger("agentId"), devices.getUdId(), devices.getAgentId());
+            return;
         }
         devices.setAgentId(jsonMsg.getInteger("agentId"));
         if (jsonMsg.getString("name") != null) {
@@ -365,8 +422,31 @@ public class DevicesServiceImpl extends SonicServiceImpl<DevicesMapper, Devices>
         }
         if (jsonMsg.getString("status") != null) {
             devices.setStatus(jsonMsg.getString("status"));
+            // Metering: a session lasts while the device is being debugged by its user.
+            if (devices.getId() != null && !DeviceStatus.DEBUGGING.equals(devices.getStatus())) {
+                deviceSessionsService.end(devices.getId(), sessionEndReason(devices.getStatus()));
+            }
         }
         save(devices);
+    }
+
+    private static String sessionEndReason(String status) {
+        return switch (status) {
+            case DeviceStatus.ONLINE -> DeviceSessions.RELEASED;
+            case DeviceStatus.TESTING -> DeviceSessions.SUPERSEDED;
+            default -> DeviceSessions.DEVICE_LOST;
+        };
+    }
+
+    /**
+     * Devices are keyed by serial number alone, so a report from another agent takes the record
+     * over. That is fine when an owner re-plugs a phone into another of their agents, but across
+     * owners it is a spoof or a serial collision and must not steal someone else's device.
+     */
+    private boolean canMoveBetween(int fromAgentId, int toAgentId) {
+        Agents from = agentsService.findById(fromAgentId);
+        Agents to = agentsService.findById(toAgentId);
+        return from == null || (to != null && Objects.equals(from.getOwnerName(), to.getOwnerName()));
     }
 
     @Override

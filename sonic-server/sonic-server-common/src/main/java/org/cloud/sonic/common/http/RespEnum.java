@@ -40,6 +40,8 @@ public enum RespEnum {
     RESOURCE_NOT_FOUND(1004, "not.found.resource"),
     ID_NOT_FOUND(3001, "not.found.id"),
     DEVICE_NOT_FOUND(3002, "not.found.device"),
+    DEVICE_BUSY(3006, "busy.device"),
+    REMOTE_ACCESS_DISABLED(3007, "disabled.remote.access"),
     AGENT_NOT_ONLINE(5001, "not.online.agent"),
     PARAMS_NOT_VALID(4004, "not.valid.params"),
     PARAMS_NOT_READABLE(4005, "not.readable.params"),

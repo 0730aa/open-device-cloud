@@ -49,6 +49,8 @@ public class UploadTools {
     private String host;
     @Value("${sonic.server.port}")
     private String port;
+    @Value("${sonic.server.ssl:false}")
+    private boolean ssl;
     private static String baseUrl;
 
     private static RestTemplate restTemplate;
@@ -56,7 +58,7 @@ public class UploadTools {
     @Autowired
     public void setRestTemplate(RestTemplate restTemplate) {
         UploadTools.restTemplate = restTemplate;
-        baseUrl = ("http://" + host + ":" + port + "/server/api/folder").replace(":80/", "/");
+        baseUrl = ((ssl ? "https://" : "http://") + host + ":" + port + "/server/api/folder").replace(ssl ? ":443/" : ":80/", "/");
     }
 
     public static String upload(File uploadFile, String type) {

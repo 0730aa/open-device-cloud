@@ -31,7 +31,15 @@ import java.util.List;
 public interface AgentsService extends IService<Agents> {
     List<Agents> findAgents();
 
-    void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds);
+    /**
+     * @param ownerName becomes the owner when this creates an agent (id 0); ignored otherwise
+     */
+    void update(int id, String name, int highTemp, int highTempTime, int robotType, String robotToken, String robotSecret, int[] alertRobotIds, String ownerName);
+
+    /**
+     * Whether the user may manage the agent and its devices: its owner, or the super admin for any agent.
+     */
+    boolean canManage(Agents agents, String userName);
 
     boolean offLine(int id);
 

@@ -31,7 +31,6 @@ import org.cloud.sonic.agent.common.maps.AndroidAPKMap;
 import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -43,19 +42,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/audio/{key}/{udId}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/audio/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class AudioWSServer implements IAndroidWSServer {
-    @Value("${sonic.agent.key}")
-    private String key;
     private Map<Session, Thread> audioMap = new ConcurrentHashMap<>();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey, @PathParam("udId") String udId) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key))) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket, @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
             return;
         }
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
+        if (iDevice == null) {
+            log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
+            return;
+        }
 
         session.getUserProperties().put("udId", udId);
         session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
@@ -185,7 +186,9 @@ public class AudioWSServer implements IAndroidWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        exit(session);
+        if (RemoteSessionGuard.release(session)) {
+            exit(session);
+        }
     }
 
     @OnError

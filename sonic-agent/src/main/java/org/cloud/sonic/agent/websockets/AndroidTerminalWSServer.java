@@ -33,7 +33,6 @@ import org.cloud.sonic.agent.common.maps.WebSocketSessionMap;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.PortTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -52,25 +51,27 @@ import java.util.concurrent.TimeUnit;
  */
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/android/terminal/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/android/terminal/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class AndroidTerminalWSServer implements IAndroidWSServer {
 
-    @Value("${sonic.agent.key}")
-    private String key;
     private Map<Session, Future<?>> terminalMap = new ConcurrentHashMap<>();
     private Map<Session, Thread> socketMap = new ConcurrentHashMap<>();
     private Map<Session, OutputStream> outputStreamMap = new ConcurrentHashMap<>();
     private Map<Session, Future<?>> logcatMap = new ConcurrentHashMap<>();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
             return;
         }
 
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
+        if (iDevice == null) {
+            log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
+            return;
+        }
 
         session.getUserProperties().put("udId", udId);
         session.getUserProperties().put("id", String.format("%s-%s", this.getClass().getSimpleName(), udId));
@@ -255,7 +256,9 @@ public class AndroidTerminalWSServer implements IAndroidWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        exit(session);
+        if (RemoteSessionGuard.release(session)) {
+            exit(session);
+        }
     }
 
     @OnError

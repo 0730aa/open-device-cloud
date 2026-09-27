@@ -13,4 +13,8 @@ import java.lang.annotation.Target;
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 public @interface WebAspect {
+    /**
+     * Arguments or response carry secrets (passwords, tokens, tickets, keys): log neither.
+     */
+    boolean sensitive() default false;
 }

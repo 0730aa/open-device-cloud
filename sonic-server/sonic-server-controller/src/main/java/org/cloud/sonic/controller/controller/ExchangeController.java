@@ -20,12 +20,14 @@ package org.cloud.sonic.controller.controller;
 import com.alibaba.fastjson.JSONObject;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.websocket.Session;
 import lombok.extern.slf4j.Slf4j;
 import org.cloud.sonic.common.config.WebAspect;
 import org.cloud.sonic.common.config.WhiteUrl;
 import org.cloud.sonic.common.http.RespEnum;
 import org.cloud.sonic.common.http.RespModel;
+import org.cloud.sonic.common.tools.JWTTokenTool;
 import org.cloud.sonic.controller.models.domain.Agents;
 import org.cloud.sonic.controller.models.domain.Devices;
 import org.cloud.sonic.controller.models.interfaces.AgentStatus;
@@ -42,24 +44,33 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/exchange")
 @Slf4j
 public class ExchangeController {
+    /**
+     * Header carrying {@link JWTTokenTool#getInternalToken()} on server-to-server calls.
+     */
+    public static final String INTERNAL_TOKEN_HEADER = "SonicInternalToken";
 
     @Autowired
     private AgentsService agentsService;
     @Autowired
     private DevicesService devicesService;
+    @Autowired
+    private JWTTokenTool jwtTokenTool;
 
     @WebAspect
     @Operation(summary = "重启设备", description = "根据 id 重启特定设备")
     @GetMapping("/reboot")
-    public RespModel<String> reboot(@RequestParam(name = "id") int id) {
+    public RespModel<String> reboot(@RequestParam(name = "id") int id, HttpServletRequest request) {
 
         Devices devices = devicesService.findById(id);
+        if (ObjectUtils.isEmpty(devices)) {
+            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        }
         Agents agents = agentsService.findById(devices.getAgentId());
         if (ObjectUtils.isEmpty(agents)) {
             return new RespModel<>(RespEnum.AGENT_NOT_ONLINE);
         }
-        if (ObjectUtils.isEmpty(devices)) {
-            return new RespModel<>(RespEnum.DEVICE_NOT_FOUND);
+        if (!agentsService.canManage(agents, jwtTokenTool.getUserName(request.getHeader("SonicToken")))) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
         }
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("msg", "reboot");
@@ -72,8 +83,11 @@ public class ExchangeController {
     @WebAspect
     @Operation(summary = "下线agent", description = "下线指定的 agent")
     @GetMapping("/stop")
-    public RespModel<String> stop(@RequestParam(name = "id") int id) {
+    public RespModel<String> stop(@RequestParam(name = "id") int id, HttpServletRequest request) {
         Agents agents = agentsService.findById(id);
+        if (!agentsService.canManage(agents, jwtTokenTool.getUserName(request.getHeader("SonicToken")))) {
+            return new RespModel<>(RespEnum.PERMISSION_DENIED);
+        }
         if (agents.getStatus() != AgentStatus.ONLINE) {
             return new RespModel<>(2000, "stop.agent.not.online");
         }
@@ -87,7 +101,13 @@ public class ExchangeController {
     @WebAspect
     @WhiteUrl
     @PostMapping("/send")
-    public RespModel<String> send(@RequestParam(name = "id") int id, @RequestBody JSONObject jsonObject) {
+    public RespModel<String> send(@RequestParam(name = "id") int id, @RequestBody JSONObject jsonObject,
+                                  HttpServletRequest request) {
+        // This relays arbitrary commands (shutdown, occupy, run suites...) to an agent, so only
+        // other server instances may call it; being logged in as a user is not enough.
+        if (!jwtTokenTool.verifyInternal(request.getHeader(INTERNAL_TOKEN_HEADER))) {
+            return new RespModel<>(RespEnum.UNAUTHORIZED);
+        }
         Session agentSession = BytesTool.agentSessionMap.get(id);
         if (agentSession != null) {
             BytesTool.sendText(agentSession, jsonObject.toJSONString());

@@ -83,6 +83,15 @@ public class AgentsDTO implements Serializable, TypeConverter<AgentsDTO, Agents>
     @Schema(description = "是否使用sonic hub", example = "1")
     Integer hasHub;
 
+    @Schema(description = "是否允许远程ADB/SIB/WDA/UIA2端口", example = "0")
+    Integer remoteAccess;
+
+    @Schema(description = "机主用户名，为空表示平台自营", example = "alice")
+    String ownerName;
+
+    @Schema(description = "浏览器访问Agent的地址（TLS代理或隧道），为空则用host:port", example = "https://phone-1.example.com")
+    String publicUrl;
+
     @Schema(description = "通知机器人id串，为null时自动选取所有可用机器人", example = "[1,2]")
     int[] alertRobotIds;
 }

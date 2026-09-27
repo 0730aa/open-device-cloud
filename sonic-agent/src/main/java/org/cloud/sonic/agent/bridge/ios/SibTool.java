@@ -839,6 +839,13 @@ public class SibTool implements ApplicationListener<ContextRefreshedEvent> {
         logger.info(re);
     }
 
+    /**
+     * @return the local port of the device's web inspector, or null if none is running.
+     */
+    public static Integer getWebViewPort(String udId) {
+        return webViewMap.get(udId);
+    }
+
     public static List<JSONObject> getWebView(String udId) {
         int port;
         if (webViewMap.get(udId) != null) {

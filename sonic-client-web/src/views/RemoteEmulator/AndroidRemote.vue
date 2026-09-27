@@ -240,12 +240,41 @@ defineProps({
   lineMouseleave: Function,
 });
 
+/**
+ * Where the browser reaches the agent: its public URL when it has one (behind a TLS proxy or a
+ * tunnel), otherwise host:port, over wss whenever this page itself is served over https.
+ */
+const agentWsBase = () => {
+  if (agent.value.publicUrl) {
+    return agent.value.publicUrl.replace(/^http/i, 'ws');
+  }
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${agent.value.host}:${agent.value.port}`;
+};
+/**
+ * The agent only accepts short-lived remote tickets, so fetch a new one for every connection.
+ */
+const withTicket = (callback) => {
+  axios
+    .get('/controller/devices/remoteTicket', {
+      params: { id: device.value.id },
+    })
+    .then((resp) => {
+      if (resp.code === 2000) {
+        callback(resp.data.ticket);
+      }
+    });
+};
 const tabWebView = (port, id, transTitle) => {
-  title.value = transTitle;
-  isWebView.value = false;
-  iframeUrl.value = `/chrome/devtools/inspector.html?ws=${agent.value.host}:${agent.value.port}/websockets/webView/${agent.value.secretKey}/${port}/${id}`;
-  nextTick(() => {
-    iFrameHeight.value = document.body.clientHeight - 150;
+  withTicket((ticket) => {
+    title.value = transTitle;
+    isWebView.value = false;
+    // DevTools takes the agent address as ?ws= or ?wss= without the scheme.
+    const [scheme, address] = agentWsBase().split('://');
+    iframeUrl.value = `/chrome/devtools/inspector.html?${scheme}=${address}/websockets/webView/${ticket}/${device.value.udId}/${port}/${id}`;
+    nextTick(() => {
+      iFrameHeight.value = document.body.clientHeight - 150;
+    });
   });
 };
 const saveEle = () => {
@@ -498,19 +527,15 @@ const setImgData = () => {
   };
   isShowImg.value = true;
 };
-const openSocket = (host, port, key, udId) => {
+const openSocket = (ticket, udId) => {
   if ('WebSocket' in window) {
     //
     websocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `${agentWsBase()}/websockets/android/${ticket}/${udId}`
     );
     //
     __Scrcpy = new Scrcpy({
-      socketURL: `ws://${host}:${port}/websockets/android/screen/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`,
+      socketURL: `${agentWsBase()}/websockets/android/screen/${ticket}/${udId}`,
       node: 'scrcpy-video',
       onmessage: screenWebsocketOnmessage,
       excuteMode: screenMode.value,
@@ -519,9 +544,7 @@ const openSocket = (host, port, key, udId) => {
     changeScreenMode(screenMode.value, 1);
     //
     terminalWebsocket = new WebSocket(
-      `ws://${host}:${port}/websockets/android/terminal/${key}/${udId}/${localStorage.getItem(
-        'SonicToken'
-      )}`
+      `${agentWsBase()}/websockets/android/terminal/${ticket}/${udId}`
     );
   } else {
     console.error($t('androidRemoteTS.noWebSocket'));
@@ -746,6 +769,12 @@ const websocketOnmessage = (message) => {
       break;
     }
     case 'proxyResult': {
+      if (JSON.parse(message.data).isEnable === false) {
+        ElMessage.error({
+          message: $t('androidRemoteTS.code.noAgent'),
+        });
+        break;
+      }
       proxyWebPort.value = JSON.parse(message.data).webPort;
       proxyConnPort.value = JSON.parse(message.data).port;
       nextTick(() => {
@@ -1669,12 +1698,9 @@ const getDeviceById = (id) => {
         .then((resp) => {
           if (resp.code === 2000) {
             agent.value = resp.data;
-            openSocket(
-              agent.value.host,
-              agent.value.port,
-              agent.value.secretKey,
-              device.value.udId
-            );
+            withTicket((ticket) => {
+              openSocket(ticket, device.value.udId);
+            });
           }
         });
     }
@@ -1685,10 +1711,10 @@ const getDeviceById = (id) => {
  */
 let audioPlayer = null;
 const isConnectAudio = ref(false);
-const initAudioPlayer = () => {
+const initAudioPlayer = (ticket) => {
   audioPlayer = new AudioProcessor({
     node: 'audio-player',
-    wsUrl: `ws://${agent.value.host}:${agent.value.port}/websockets/audio/${agent.value.secretKey}/${device.value.udId}`,
+    wsUrl: `${agentWsBase()}/websockets/audio/${ticket}/${device.value.udId}`,
     onReady() {
       isConnectAudio.value = true;
     },
@@ -1704,10 +1730,12 @@ const playAudio = () => {
     });
     return;
   }
-  initAudioPlayer();
-  audioPlayer.onPlay();
-  ElMessage.success({
-    message: $t('androidRemoteTS.audio'),
+  withTicket((ticket) => {
+    initAudioPlayer(ticket);
+    audioPlayer.onPlay();
+    ElMessage.success({
+      message: $t('androidRemoteTS.audio'),
+    });
   });
 };
 const destroyAudio = () => {

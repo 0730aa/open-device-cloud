@@ -41,6 +41,7 @@ public class TransportConnectionThread implements Runnable {
 
     String serverHost = String.valueOf(SpringTool.getPropertiesValue("sonic.server.host"));
     Integer serverPort = Integer.valueOf(SpringTool.getPropertiesValue("sonic.server.port"));
+    boolean serverSsl = Boolean.parseBoolean(SpringTool.getPropertiesValue("sonic.server.ssl:false"));
     String key = String.valueOf(SpringTool.getPropertiesValue("sonic.agent.key"));
 
     @Override
@@ -50,9 +51,7 @@ public class TransportConnectionThread implements Runnable {
             if (!TransportWorker.isKeyAuth) {
                 return;
             }
-            String url = String.format("ws://%s:%d/server/websockets/agent/%s",
-                    serverHost, serverPort, key).replace(":80/", "/");
-            URI uri = URI.create(url);
+            URI uri = URI.create(serverUrl(serverSsl, serverHost, serverPort, key));
             TransportClient transportClient = new TransportClient(uri);
             transportClient.connect();
         } else {
@@ -60,5 +59,10 @@ public class TransportConnectionThread implements Runnable {
             ping.put("msg", "ping");
             TransportWorker.send(ping);
         }
+    }
+
+    static String serverUrl(boolean ssl, String host, int port, String key) {
+        return String.format("%s://%s:%d/server/websockets/agent/%s", ssl ? "wss" : "ws", host, port, key)
+                .replace(ssl ? ":443/" : ":80/", "/");
     }
 }

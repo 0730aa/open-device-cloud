@@ -35,7 +35,6 @@ import org.cloud.sonic.agent.tests.android.scrcpy.ScrcpyServerUtil;
 import org.cloud.sonic.agent.tests.handlers.AndroidMonitorHandler;
 import org.cloud.sonic.agent.tools.BytesTool;
 import org.cloud.sonic.agent.tools.ScheduleTool;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -46,25 +45,23 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 @Slf4j
-@ServerEndpoint(value = "/websockets/android/screen/{key}/{udId}/{token}", configurator = WsEndpointConfigure.class)
+@ServerEndpoint(value = "/websockets/android/screen/{ticket}/{udId}", configurator = WsEndpointConfigure.class)
 public class AndroidScreenWSServer implements IAndroidWSServer {
-    @Value("${sonic.agent.key}")
-    private String key;
     private Map<String, String> typeMap = new ConcurrentHashMap<>();
     private Map<String, String> picMap = new ConcurrentHashMap<>();
 
     private AndroidMonitorHandler androidMonitorHandler = new AndroidMonitorHandler();
 
     @OnOpen
-    public void onOpen(Session session, @PathParam("key") String secretKey,
-                       @PathParam("udId") String udId, @PathParam("token") String token) throws Exception {
-        if (secretKey.length() == 0 || (!secretKey.equals(key)) || token.length() == 0) {
-            log.info("Auth Failed!");
+    public void onOpen(Session session, @PathParam("ticket") String ticket,
+                       @PathParam("udId") String udId) throws Exception {
+        if (RemoteSessionGuard.admit(session, ticket, udId) == null) {
             return;
         }
         IDevice iDevice = AndroidDeviceBridgeTool.getIDeviceByUdId(udId);
         if (iDevice == null) {
             log.info("Target device is not connecting, please check the connection.");
+            RemoteSessionGuard.reject(session, "device not connected");
             return;
         }
         AndroidDeviceBridgeTool.screen(iDevice, "abort");
@@ -103,7 +100,9 @@ public class AndroidScreenWSServer implements IAndroidWSServer {
 
     @OnClose
     public void onClose(Session session) {
-        exit(session);
+        if (RemoteSessionGuard.release(session)) {
+            exit(session);
+        }
     }
 
     @OnError
